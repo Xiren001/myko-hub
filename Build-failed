@@ -1,0 +1,114 @@
+unpacking archive
+350 KB
+4ms
+uploading snapshot
+75.2 KB
+using build driver railpack-v0.26.0
+ INFO No package manager inferred, using npm default
+                   
+╭─────────────────╮
+│ Railpack 0.26.0 │
+╰─────────────────╯
+ 
+  ↳ Detected Node
+  ↳ Using npm package manager
+  ↳ Found workspace with 1 packages
+            
+  Packages  
+  ──────────
+  node  │  22.22.3  │  railpack default (22)
+            
+  Steps     
+  ──────────
+  ▸ install
+    $ npm ci
+         
+  ▸ build
+    $ npm run build
+            
+  Deploy    
+  ──────────
+    $ npm run start
+ 
+scheduling build on Metal builder "builder-xmxkjd"
+
+load build definition from ./railpack-plan.json
+0ms
+
+install mise packages: node cached
+0ms
+
+mkdir -p /app/node_modules/.cache cached
+0ms
+
+copy backend/package.json, package-lock.json, package.json
+1m 10s
+
+npm ci
+11s
+Run `npm audit` for details.
+
+copy / /app
+3s
+
+npm run build
+9s
+npm warn config production Use `--omit=dev` instead.
+> myko-hub@1.0.0 build
+> npm run build --workspace=backend
+npm warn config production Use `--omit=dev` instead.
+> backend@1.0.0 build
+> tsc
+src/routes/kpi.ts(25,39): error TS2339: Property 'live_all_geos' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/kpi.ts(29,12): error TS2339: Property 'into_proofread' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/kpi.ts(29,33): error TS2339: Property 'into_testing' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/kpi.ts(29,51): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/qa.ts(28,1): error TS2552: Cannot find name 'router'. Did you mean 'Router'?
+
+src/routes/qa.ts(44,1): error TS2552: Cannot find name 'router'. Did you mean 'Router'?
+
+src/routes/qa.ts(62,18): error TS2552: Cannot find name 'router'. Did you mean 'Router'?
+
+src/routes/reports.ts(22,39): error TS2339: Property 'week_number' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(26,35): error TS2339: Property 'live_all_geos' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(27,33): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(28,32): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(56,39): error TS2339: Property 'live_all_geos' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(68,42): error TS2339: Property 'type' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(69,41): error TS2339: Property 'type' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(70,54): error TS2339: Property 'week_number' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(71,37): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(72,36): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(73,37): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(74,43): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+src/routes/reports.ts(74,97): error TS2339: Property 'outcome' does not exist on type '{ phase: string; build_days: number | null; proof_days: number | null; test_days: number | null; expand_days: number | null; total_days: number | null; }'.
+
+npm error Lifecycle script `build` failed with error:
+
+npm error code 2
+npm error path /app/backend
+npm error workspace backend@1.0.0
+npm error location /app/backend
+npm error command failed
+npm error command sh -c tsc
+Build Failed: build daemon returned an error < failed to solve: process "npm run build" did not complete successfully: exit code: 2 >
+You reached the end of the range
+Jun 4, 2026, 6:48 AM
+
+

@@ -25,6 +25,8 @@ const QA_ITEMS = [
   { key: 'loc_legal', section: 'localization', label: 'Legal/compliance copy (returns, privacy) localized' },
 ]
 
+const router = Router()
+
 router.get('/:buildId', authenticate, async (req: AuthRequest, res: Response) => {
   const { data: existing } = await supabase
     .from('qa_items')
@@ -58,6 +60,4 @@ router.put('/:buildId', authenticate, requireAdmin, async (req: AuthRequest, res
   res.json(data)
 })
 
-const router2 = Router()
-router2.use('/', router)
-export default router2
+export default router

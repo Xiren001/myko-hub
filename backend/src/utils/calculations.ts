@@ -21,10 +21,22 @@ export function computePhase(build: {
   return 'pending'
 }
 
-export function enrichBuild(build: Record<string, unknown>) {
+export interface RawBuild {
+  phase1_start?: string | null
+  into_proofread?: string | null
+  into_testing?: string | null
+  outcome_decided?: string | null
+  outcome?: string | null
+  live_all_geos?: string | null
+  week_number?: number | null
+  type?: string | null
+  [key: string]: unknown
+}
+
+export function enrichBuild(build: RawBuild) {
   return {
     ...build,
-    phase: computePhase(build as Parameters<typeof computePhase>[0]),
+    phase: computePhase(build),
     build_days: daysBetween(build.phase1_start as string, build.into_proofread as string),
     proof_days: daysBetween(build.into_proofread as string, build.into_testing as string),
     test_days: daysBetween(build.into_testing as string, build.outcome_decided as string),
