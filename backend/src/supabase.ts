@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+import ws from 'ws'
 
 dotenv.config()
 
@@ -12,4 +13,6 @@ if (!url || !key) {
 
 export const supabase = createClient(url, key, {
   auth: { autoRefreshToken: false, persistSession: false },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  realtime: { transport: ws as any },
 })
