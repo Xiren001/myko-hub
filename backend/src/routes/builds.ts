@@ -6,13 +6,12 @@ import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
-  // Show builds currently in the proofreading phase (into_proofread set, into_testing not yet set)
-  // Use .or() so that builds with outcome = NULL are included (SQL: NULL != 'stopped' = NULL, not TRUE)
+  // Show builds where proofread has started (into_proofread set) but not yet ended (proof_end null)
   const { data, error } = await supabase
     .from('builds')
     .select('*')
     .not('into_proofread', 'is', null)
-    .is('into_testing', null)
+    .is('proof_end', null)
     .or('outcome.is.null,outcome.neq.stopped')
     .order('into_proofread', { ascending: true })
 
