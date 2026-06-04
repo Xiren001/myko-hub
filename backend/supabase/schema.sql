@@ -37,6 +37,7 @@ create table if not exists public.settings (
   tool_approval_threshold numeric default 100,
   payment_approval_threshold numeric default 500,
   updated_at timestamptz default now(),
+  approver_permissions jsonb default '{"dashboard":true,"jewelry_tracker":true,"funnel_tracker":true,"proofread_queue":true,"mistake_log":true,"monthly_planner":true,"decision_rights":true,"settings":false}'::jsonb,
   constraint single_row check (id = 1)
 );
 

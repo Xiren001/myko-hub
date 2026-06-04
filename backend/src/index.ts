@@ -12,6 +12,7 @@ import settingsRouter from './routes/settings'
 import plannerRouter from './routes/planner'
 import qaRouter from './routes/qa'
 import { authenticate, AuthRequest } from './middleware/auth'
+import { supabase } from './supabase'
 
 const app = express()
 
@@ -20,8 +21,13 @@ app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
-app.get('/api/me', authenticate, (req: AuthRequest, res) => {
-  res.json({ userId: req.userId, userRole: req.userRole })
+app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
+  const { data: settings } = await supabase.from('settings').select('approver_permissions').eq('id', 1).single()
+  res.json({
+    userId: req.userId,
+    userRole: req.userRole,
+    approverPermissions: settings?.approver_permissions ?? null,
+  })
 })
 
 app.use('/api/builds', buildsRouter)
