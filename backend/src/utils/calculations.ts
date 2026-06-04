@@ -19,7 +19,9 @@ export function computePhase(build: {
 
 export interface RawBuild {
   phase1_start?: string | null
+  phase1_end?: string | null
   into_proofread?: string | null
+  proof_end?: string | null
   into_testing?: string | null
   outcome_decided?: string | null
   outcome?: string | null
@@ -33,8 +35,8 @@ export function enrichBuild(build: RawBuild) {
   return {
     ...build,
     phase: computePhase(build),
-    build_days: daysBetween(build.phase1_start as string, build.into_proofread as string),
-    proof_days: daysBetween(build.into_proofread as string, build.into_testing as string),
+    build_days: daysBetween(build.phase1_start as string, build.phase1_end as string),
+    proof_days: daysBetween(build.into_proofread as string, build.proof_end as string),
     test_days: daysBetween(build.into_testing as string, build.outcome_decided as string),
     total_days: build.phase1_start
       ? daysBetween(build.phase1_start as string, (build.outcome_decided as string) ?? today)
