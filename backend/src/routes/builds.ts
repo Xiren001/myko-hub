@@ -37,9 +37,11 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
 })
 
 router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  // Strip computed fields that don't exist as DB columns
+  const { phase, build_days, proof_days, test_days, total_days, created_at, ...updateData } = req.body
   const { data, error } = await supabase
     .from('builds')
-    .update({ ...req.body, updated_at: new Date().toISOString() })
+    .update({ ...updateData, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .select()
     .single()
