@@ -11,6 +11,7 @@ import reportsRouter from './routes/reports'
 import settingsRouter from './routes/settings'
 import plannerRouter from './routes/planner'
 import qaRouter from './routes/qa'
+import { authenticate, AuthRequest } from './middleware/auth'
 
 const app = express()
 
@@ -18,6 +19,10 @@ app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000' }))
 app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
+
+app.get('/api/me', authenticate, (req: AuthRequest, res) => {
+  res.json({ userId: req.userId, userRole: req.userRole })
+})
 
 app.use('/api/builds', buildsRouter)
 app.use('/api/mistakes', mistakesRouter)
