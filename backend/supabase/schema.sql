@@ -91,6 +91,19 @@ create table if not exists public.mistakes (
   created_at timestamptz default now()
 );
 
+-- Decision rights
+create table if not exists public.decision_rights (
+  id uuid primary key default gen_random_uuid(),
+  section text not null default '',
+  decision text not null,
+  myko text not null default '—',
+  abigel text not null default '—',
+  owner text not null default '—',
+  sort_order int default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- Report narratives
 create table if not exists public.report_narratives (
   id uuid primary key default gen_random_uuid(),

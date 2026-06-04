@@ -11,6 +11,7 @@ import reportsRouter from './routes/reports'
 import settingsRouter from './routes/settings'
 import plannerRouter from './routes/planner'
 import qaRouter from './routes/qa'
+import decisionRightsRouter from './routes/decision-rights'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 
@@ -37,6 +38,7 @@ app.use('/api/reports', reportsRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/planner', plannerRouter)
 app.use('/api/qa', qaRouter)
+app.use('/api/decision-rights', decisionRightsRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`))
