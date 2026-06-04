@@ -15,18 +15,28 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const { data: builds, error } = await q
   if (error) return res.status(500).json({ error: error.message })
 
+  let mq = supabase.from('mistakes').select('date')
+  if (ms && me) mq = mq.gte('month_year', ms).lte('month_year', me)
+  const { data: mistakes } = await mq
+
   const enriched = (builds ?? []).map(enrichBuild)
   const weeks = [1, 2, 3, 4]
 
   const weekStats = weeks.map(w => {
     const wb = enriched.filter(b => b.week_number === w)
     const decided = wb.filter(b => b.outcome_decided)
+    const wMistakes = (mistakes ?? []).filter(m => {
+      if (!m.date) return false
+      const day = new Date(m.date).getUTCDate()
+      return Math.min(Math.ceil(day / 7), 4) === w
+    })
     return {
       week: w,
       logged: wb.length,
       completed: decided.length,
       winners: wb.filter(b => b.outcome === 'expanding').length,
       killed: wb.filter(b => b.outcome === 'stopped').length,
+      mistakes: wMistakes.length,
       avgBuildDays: avg(wb.map(b => b.build_days)),
       avgTotalDays: avg(decided.map(b => b.total_days)),
     }
@@ -63,6 +73,16 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     .eq('month_year', `${monthStr}-01`)
     .single()
 
+  let mq = supabase.from('mistakes').select('*')
+  if (ms && me) mq = mq.gte('month_year', ms).lte('month_year', me)
+  const { data: mistakes } = await mq
+  const mistakeList = mistakes ?? []
+
+  const categoryCounts: Record<string, number> = {}
+  for (const m of mistakeList) {
+    if (m.category) categoryCounts[m.category] = (categoryCounts[m.category] ?? 0) + 1
+  }
+
   const withOutcome = enriched.filter(b => b.outcome)
   const expanding = enriched.filter(b => b.outcome === 'expanding').length
 
@@ -78,6 +98,9 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
       : '—',
     avgBuildDays: avg(enriched.map(b => b.build_days)),
     avgTotalDays: avg(decided.map(b => b.total_days)),
+    mistakesTotal: mistakeList.length,
+    mistakesByCategory: categoryCounts,
+    sopUpdated: mistakeList.filter(m => m.sop_updated).length,
     narrative: narrative ?? null,
   })
 })
