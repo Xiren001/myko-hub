@@ -1,8 +1,7 @@
 export function daysBetween(from: string | null | undefined, to: string | null | undefined): number | null {
   if (!from || !to) return null
   const diff = new Date(to).getTime() - new Date(from).getTime()
-  // inclusive: count both start and end day
-  return Math.round(diff / (1000 * 60 * 60 * 24)) + 1
+  return Math.round(diff / (1000 * 60 * 60 * 24))
 }
 
 export function computePhase(build: {
@@ -12,9 +11,9 @@ export function computePhase(build: {
   outcome_decided?: string | null
 }): string {
   if (build.outcome_decided) return 'decided'
-  if (build.into_testing)    return 'testing'
-  if (build.into_proofread)  return 'proofread'
-  if (build.phase1_start)    return 'building'
+  if (build.into_testing) return 'testing'
+  if (build.into_proofread) return 'proofread'
+  if (build.phase1_start) return 'building'
   return 'pending'
 }
 
@@ -34,16 +33,9 @@ export function enrichBuild(build: RawBuild) {
   return {
     ...build,
     phase: computePhase(build),
-    // Each phase counts from its start to its end (or today if still in progress)
-    build_days: build.phase1_start
-      ? daysBetween(build.phase1_start as string, (build.into_proofread as string) ?? today)
-      : null,
-    proof_days: build.into_proofread
-      ? daysBetween(build.into_proofread as string, (build.into_testing as string) ?? today)
-      : null,
-    test_days: build.into_testing
-      ? daysBetween(build.into_testing as string, (build.outcome_decided as string) ?? today)
-      : null,
+    build_days: daysBetween(build.phase1_start as string, build.into_proofread as string),
+    proof_days: daysBetween(build.into_proofread as string, build.into_testing as string),
+    test_days: daysBetween(build.into_testing as string, build.outcome_decided as string),
     total_days: build.phase1_start
       ? daysBetween(build.phase1_start as string, (build.outcome_decided as string) ?? today)
       : null,
