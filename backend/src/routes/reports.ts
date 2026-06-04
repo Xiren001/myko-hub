@@ -99,6 +99,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     avgBuildDays: avg(enriched.map(b => b.build_days)),
     avgTotalDays: avg(decided.map(b => b.total_days)),
     mistakesTotal: mistakeList.length,
+    mistakesRepeating: Object.values(categoryCounts).filter(c => c > 1).reduce((s, c) => s + c, 0),
     mistakesByCategory: categoryCounts,
     sopUpdated: mistakeList.filter(m => m.sop_updated).length,
     narrative: narrative ?? null,
