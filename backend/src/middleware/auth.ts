@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
+import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
 
 export interface AuthRequest extends Request {
@@ -13,7 +14,18 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return res.status(401).json({ error: 'Invalid token' })
 
-  const { data: profile } = await supabase
+  // Pass the user's JWT so the profile query works whether SUPABASE_SERVICE_ROLE_KEY
+  // is the service role key (bypasses RLS) or the anon key (auth.uid() satisfies RLS)
+  const client = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    }
+  )
+
+  const { data: profile } = await client
     .from('profiles')
     .select('role')
     .eq('id', user.id)
