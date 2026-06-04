@@ -25,7 +25,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   const decided = enriched.filter(b => b.outcome_decided)
 
   const proofreadQueue = enriched.filter(
-    b => b.into_proofread && !b.into_testing && b.outcome !== 'stopped'
+    b => b.phase1_start && !b.into_proofread && b.outcome !== 'stopped'
   )
 
   res.json({
@@ -35,7 +35,8 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     totalCycleAvg: avg(decided.map(b => b.total_days)),
     proofreadQueueDepth: proofreadQueue.length,
     proofreadFlagged: proofreadQueue.filter(b => {
-      const days = b.proof_days ?? 0
+      if (!b.phase1_start) return false
+      const days = Math.round((Date.now() - new Date(b.phase1_start as string).getTime()) / 86_400_000)
       return days > (settings?.proof_target_days ?? 3)
     }).length,
     mistakesCount: (mistakes ?? []).length,

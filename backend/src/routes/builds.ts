@@ -6,13 +6,14 @@ import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
+  // Show builds that have started Phase 1 but haven't been proofread yet
   const { data, error } = await supabase
     .from('builds')
     .select('*')
-    .not('into_proofread', 'is', null)
-    .is('into_testing', null)
+    .not('phase1_start', 'is', null)
+    .is('into_proofread', null)
     .neq('outcome', 'stopped')
-    .order('into_proofread', { ascending: true })
+    .order('phase1_start', { ascending: true })
 
   if (error) return res.status(500).json({ error: error.message })
   res.json((data ?? []).map(enrichBuild))
