@@ -22,6 +22,16 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json({ mistakes: data ?? [], categoryCounts: counts })
 })
 
+router.post('/bulk', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const rows = (req.body as Record<string, unknown>[]).map(r => ({
+    ...r,
+    month_year: r.date ? String(r.date).slice(0, 8) + '01' : null,
+  }))
+  const { data, error } = await supabase.from('mistakes').insert(rows).select()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
 router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   const body = { ...req.body, month_year: req.body.date ? req.body.date.slice(0, 8) + '01' : null }
   const { data, error } = await supabase.from('mistakes').insert(body).select().single()
