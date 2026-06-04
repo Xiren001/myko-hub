@@ -22,19 +22,17 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).single()
 
   const enriched = (builds ?? []).map(enrichBuild)
-  const live = enriched.filter(b => b.live_all_geos)
+  const decided = enriched.filter(b => b.outcome_decided)
 
-  // Proofread queue
   const proofreadQueue = enriched.filter(
-    b => b.into_proofread && !b.into_testing && b.outcome !== 'killed'
+    b => b.into_proofread && !b.into_testing && b.outcome !== 'stopped'
   )
 
   res.json({
     buildCycleAvg: avg(enriched.map(b => b.build_days)),
     proofCycleAvg: avg(enriched.map(b => b.proof_days)),
-    testCycleAvg: avg(live.map(b => b.test_days)),
-    expandCycleAvg: avg(live.map(b => b.expand_days)),
-    totalCycleAvg: avg(live.map(b => b.total_days)),
+    testCycleAvg: avg(decided.map(b => b.test_days)),
+    totalCycleAvg: avg(decided.map(b => b.total_days)),
     proofreadQueueDepth: proofreadQueue.length,
     proofreadFlagged: proofreadQueue.filter(b => {
       const days = b.proof_days ?? 0
@@ -50,7 +48,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       building: enriched.filter(b => b.phase === 'building').length,
       proofread: enriched.filter(b => b.phase === 'proofread').length,
       testing: enriched.filter(b => b.phase === 'testing').length,
-      expanding: enriched.filter(b => b.phase === 'expanding').length,
+      decided: enriched.filter(b => b.phase === 'decided').length,
     },
   })
 })

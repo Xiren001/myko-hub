@@ -20,18 +20,18 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
 
   const weekStats = weeks.map(w => {
     const wb = enriched.filter(b => b.week_number === w)
+    const decided = wb.filter(b => b.outcome_decided)
     return {
       week: w,
       logged: wb.length,
-      completed: wb.filter(b => b.live_all_geos).length,
-      winners: wb.filter(b => b.outcome === 'winner').length,
-      killed: wb.filter(b => b.outcome === 'killed').length,
+      completed: decided.length,
+      winners: wb.filter(b => b.outcome === 'expanding').length,
+      killed: wb.filter(b => b.outcome === 'stopped').length,
       avgBuildDays: avg(wb.map(b => b.build_days)),
-      avgTotalDays: avg(wb.filter(b => b.total_days).map(b => b.total_days)),
+      avgTotalDays: avg(decided.map(b => b.total_days)),
     }
   })
 
-  // fetch narratives
   const monthStr = month ?? new Date().toISOString().slice(0, 7)
   const { data: narratives } = await supabase
     .from('report_narratives')
@@ -53,7 +53,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   if (error) return res.status(500).json({ error: error.message })
 
   const enriched = (builds ?? []).map(enrichBuild)
-  const live = enriched.filter(b => b.live_all_geos)
+  const decided = enriched.filter(b => b.outcome_decided)
 
   const monthStr = month ?? new Date().toISOString().slice(0, 7)
   const { data: narrative } = await supabase
@@ -63,18 +63,21 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     .eq('month_year', `${monthStr}-01`)
     .single()
 
+  const withOutcome = enriched.filter(b => b.outcome)
+  const expanding = enriched.filter(b => b.outcome === 'expanding').length
+
   res.json({
-    totalCompleted: live.length,
-    jewelryCompleted: live.filter(b => b.type === 'jewelry').length,
-    funnelCompleted: live.filter(b => b.type === 'funnel').length,
-    byWeek: [1, 2, 3, 4].map(w => live.filter(b => b.week_number === w).length),
-    winners: enriched.filter(b => b.outcome === 'winner').length,
-    killed: enriched.filter(b => b.outcome === 'killed').length,
-    winRate: enriched.filter(b => b.outcome).length > 0
-      ? Math.round(enriched.filter(b => b.outcome === 'winner').length / enriched.filter(b => b.outcome).length * 100) + '%'
+    totalCompleted: decided.length,
+    jewelryCompleted: decided.filter(b => b.type === 'jewelry').length,
+    funnelCompleted: decided.filter(b => b.type === 'funnel').length,
+    byWeek: [1, 2, 3, 4].map(w => decided.filter(b => b.week_number === w).length),
+    winners: expanding,
+    killed: enriched.filter(b => b.outcome === 'stopped').length,
+    winRate: withOutcome.length > 0
+      ? Math.round(expanding / withOutcome.length * 100) + '%'
       : '—',
     avgBuildDays: avg(enriched.map(b => b.build_days)),
-    avgTotalDays: avg(live.map(b => b.total_days)),
+    avgTotalDays: avg(decided.map(b => b.total_days)),
     narrative: narrative ?? null,
   })
 })

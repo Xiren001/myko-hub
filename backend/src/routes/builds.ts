@@ -11,7 +11,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .select('*')
     .not('into_proofread', 'is', null)
     .is('into_testing', null)
-    .neq('outcome', 'killed')
+    .neq('outcome', 'stopped')
     .order('into_proofread', { ascending: true })
 
   if (error) return res.status(500).json({ error: error.message })

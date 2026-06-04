@@ -9,12 +9,8 @@ export function computePhase(build: {
   into_proofread?: string | null
   into_testing?: string | null
   outcome_decided?: string | null
-  outcome?: string | null
-  live_all_geos?: string | null
 }): string {
-  if (build.outcome === 'killed') return 'killed'
-  if (build.live_all_geos) return 'live'
-  if (build.outcome_decided) return 'expanding'
+  if (build.outcome_decided) return 'decided'
   if (build.into_testing) return 'testing'
   if (build.into_proofread) return 'proofread'
   if (build.phase1_start) return 'building'
@@ -27,21 +23,22 @@ export interface RawBuild {
   into_testing?: string | null
   outcome_decided?: string | null
   outcome?: string | null
-  live_all_geos?: string | null
   week_number?: number | null
   type?: string | null
   [key: string]: unknown
 }
 
 export function enrichBuild(build: RawBuild) {
+  const today = new Date().toISOString().split('T')[0]
   return {
     ...build,
     phase: computePhase(build),
     build_days: daysBetween(build.phase1_start as string, build.into_proofread as string),
     proof_days: daysBetween(build.into_proofread as string, build.into_testing as string),
     test_days: daysBetween(build.into_testing as string, build.outcome_decided as string),
-    expand_days: daysBetween(build.outcome_decided as string, build.live_all_geos as string),
-    total_days: daysBetween(build.phase1_start as string, build.live_all_geos as string),
+    total_days: build.phase1_start
+      ? daysBetween(build.phase1_start as string, (build.outcome_decided as string) ?? today)
+      : null,
   }
 }
 
@@ -52,7 +49,6 @@ export function avg(nums: (number | null)[]): number | null {
 }
 
 export function monthStart(monthStr: string): string {
-  // expects "2026-06", returns "2026-06-01"
   return `${monthStr}-01`
 }
 
