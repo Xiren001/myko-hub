@@ -30,6 +30,11 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
       const day = new Date(m.date).getUTCDate()
       return Math.min(Math.ceil(day / 7), 4) === w
     })
+    const toSummary = (b: ReturnType<typeof enrichBuild>) => ({
+      product_name: b.product_name as string,
+      language: b.language as string | null,
+      type: b.type as string,
+    })
     return {
       week: w,
       logged: wb.length,
@@ -39,6 +44,8 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
       mistakes: wMistakes.length,
       avgBuildDays: avg(wb.map(b => b.build_days)),
       avgTotalDays: avg(decided.map(b => b.total_days)),
+      expandingBuilds: wb.filter(b => b.outcome === 'expanding').map(toSummary),
+      testingBuilds:   wb.filter(b => b.outcome === 'testing').map(toSummary),
     }
   })
 
@@ -86,6 +93,13 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const withOutcome = enriched.filter(b => b.outcome)
   const expanding = enriched.filter(b => b.outcome === 'expanding').length
 
+  const toBuildSummary = (b: ReturnType<typeof enrichBuild>) => ({
+    product_name: b.product_name as string,
+    language: b.language as string | null,
+    type: b.type as string,
+    week_number: b.week_number as number,
+  })
+
   res.json({
     totalCompleted: decided.length,
     jewelryCompleted: decided.filter(b => b.type === 'jewelry').length,
@@ -102,6 +116,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     mistakesRepeating: Object.values(categoryCounts).filter(c => c > 1).reduce((s, c) => s + c, 0),
     mistakesByCategory: categoryCounts,
     sopUpdated: mistakeList.filter(m => m.sop_updated).length,
+    expandingList: enriched.filter(b => b.outcome === 'expanding').map(toBuildSummary),
+    testingList:   enriched.filter(b => b.outcome === 'testing').map(toBuildSummary),
     narrative: narrative ?? null,
   })
 })

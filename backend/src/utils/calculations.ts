@@ -18,6 +18,8 @@ export function computePhase(build: {
 }
 
 export interface RawBuild {
+  product_name?: string | null
+  language?: string | null
   phase1_start?: string | null
   phase1_end?: string | null
   into_proofread?: string | null
