@@ -13,6 +13,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .not('into_proofread', 'is', null)
     .is('proof_end', null)
     .or('outcome.is.null,outcome.neq.stopped')
+    .in('language', ['ES', 'DE'])
     .order('into_proofread', { ascending: true })
 
   if (error) return res.status(500).json({ error: error.message })
@@ -51,7 +52,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   // Auto-create a proof_products entry the moment a build enters proofread.
   // Uses product_name + language as the key — no DB migration required.
   // The row persists even after the build leaves the queue.
-  if (data.into_proofread) {
+  if (data.into_proofread && ['ES', 'DE'].includes(data.language)) {
     const { count } = await supabase
       .from('proof_products')
       .select('id', { count: 'exact', head: true })
