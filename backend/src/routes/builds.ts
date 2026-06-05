@@ -62,8 +62,9 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     if ((count ?? 0) === 0) {
       await supabase.from('proof_products').insert({
         product_name: data.product_name,
-        language: data.language ?? 'ES',
-        done: false,
+        language:     data.language ?? 'ES',
+        proofreader:  data.proofreader ?? null,
+        done:         false,
       })
     }
   }
