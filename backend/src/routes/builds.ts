@@ -47,6 +47,23 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
+
+  // Auto-create a proof_products entry the moment a build enters proofread.
+  // Keyed on build_id so it persists even after the build leaves the queue.
+  if (data.into_proofread) {
+    await supabase
+      .from('proof_products')
+      .upsert(
+        {
+          product_name: data.product_name,
+          language: data.language ?? 'ES',
+          build_id: data.id,
+          done: false,
+        },
+        { onConflict: 'build_id', ignoreDuplicates: true }
+      )
+  }
+
   res.json(enrichBuild(data))
 })
 
