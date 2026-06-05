@@ -13,6 +13,7 @@ import plannerRouter from './routes/planner'
 import qaRouter from './routes/qa'
 import decisionRightsRouter from './routes/decision-rights'
 import proofCorrectionsRouter from './routes/proof-corrections'
+import translateRouter from './routes/translate'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 
@@ -42,6 +43,7 @@ app.use('/api/planner', plannerRouter)
 app.use('/api/qa', qaRouter)
 app.use('/api/decision-rights', decisionRightsRouter)
 app.use('/api/proof-corrections', proofCorrectionsRouter)
+app.use('/api/translate', translateRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`))
