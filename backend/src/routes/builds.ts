@@ -40,6 +40,13 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
 })
 
 router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  // Capture old language before update so we can detect language changes
+  const { data: before } = await supabase
+    .from('builds')
+    .select('language')
+    .eq('id', req.params.id)
+    .single()
+
   // Strip computed fields that don't exist as DB columns
   const { phase, build_days, proof_days, test_days, total_days, created_at, ...updateData } = req.body
   const { data, error } = await supabase
@@ -50,23 +57,34 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     .single()
   if (error) return res.status(500).json({ error: error.message })
 
-  // Auto-create a proof_products entry the moment a build enters proofread.
-  // Uses product_name + language as the key — no DB migration required.
-  // The row persists even after the build leaves the queue.
+  // Auto-create/sync a proof_products entry when a build is in proofread.
+  // If the language changed, update the existing entry instead of creating a duplicate.
   if (data.into_proofread && ['ES', 'DE'].includes(data.language) && data.type === 'jewelry') {
-    const { count } = await supabase
-      .from('proof_products')
-      .select('id', { count: 'exact', head: true })
-      .eq('product_name', data.product_name)
-      .eq('language', data.language ?? 'ES')
+    const newLang = data.language as string
+    const oldLang = before?.language as string | undefined
 
-    if ((count ?? 0) === 0) {
-      await supabase.from('proof_products').insert({
-        product_name: data.product_name,
-        language:     data.language ?? 'ES',
-        proofreader:  data.proofreader ?? null,
-        done:         false,
-      })
+    if (oldLang && oldLang !== newLang) {
+      // Language changed on an existing proofread build — update the proof_products row
+      await supabase.from('proof_products')
+        .update({ language: newLang })
+        .eq('product_name', data.product_name)
+        .eq('language', oldLang)
+    } else {
+      // Same language (or no prior record) — create only if missing
+      const { count } = await supabase
+        .from('proof_products')
+        .select('id', { count: 'exact', head: true })
+        .eq('product_name', data.product_name)
+        .eq('language', newLang)
+
+      if ((count ?? 0) === 0) {
+        await supabase.from('proof_products').insert({
+          product_name: data.product_name,
+          language:     newLang,
+          proofreader:  data.proofreader ?? null,
+          done:         false,
+        })
+      }
     }
   }
 
