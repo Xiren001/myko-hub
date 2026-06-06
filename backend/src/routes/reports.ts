@@ -35,6 +35,8 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
       language: b.language as string | null,
       type: b.type as string,
     })
+    const tested    = wb.filter(b => b.into_testing)
+    const testedWon = tested.filter(b => b.outcome === 'expanding')
     return {
       week: w,
       logged: wb.length,
@@ -44,6 +46,9 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
       mistakes: wMistakes.length,
       avgBuildDays: avg(wb.map(b => b.build_days)),
       avgTotalDays: avg(decided.map(b => b.total_days)),
+      testedCount: tested.length,
+      testedWon: testedWon.length,
+      testWinRate: tested.length > 0 ? `${Math.round(testedWon.length / tested.length * 100)}%` : '—',
       expandingBuilds: wb.filter(b => b.outcome === 'expanding').map(toSummary),
       testingBuilds:   wb.filter(b => b.outcome === 'testing').map(toSummary),
     }
@@ -93,6 +98,12 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const withOutcome = enriched.filter(b => b.outcome)
   const expanding = enriched.filter(b => b.outcome === 'expanding').length
 
+  const allTested    = enriched.filter(b => b.into_testing)
+  const allTestedWon = allTested.filter(b => b.outcome === 'expanding')
+  const testWinRate  = allTested.length > 0
+    ? `${Math.round(allTestedWon.length / allTested.length * 100)}%`
+    : '—'
+
   const toBuildSummary = (b: ReturnType<typeof enrichBuild>) => ({
     product_name: b.product_name as string,
     language: b.language as string | null,
@@ -116,6 +127,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     mistakesRepeating: Object.values(categoryCounts).filter(c => c > 1).reduce((s, c) => s + c, 0),
     mistakesByCategory: categoryCounts,
     sopUpdated: mistakeList.filter(m => m.sop_updated).length,
+    testWinRate,
     expandingList: enriched.filter(b => b.outcome === 'expanding').map(toBuildSummary),
     testingList:   enriched.filter(b => b.outcome === 'testing').map(toBuildSummary),
     narrative: narrative ?? null,
