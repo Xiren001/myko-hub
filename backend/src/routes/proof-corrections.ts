@@ -105,11 +105,34 @@ router.post('/corrections', authenticate, requireCorrectionWrite, async (req: Au
   res.status(201).json(data)
 })
 
-// PUT /corrections/:id — admin + management + proofreader + website
-router.put('/corrections/:id', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
+// PUT /corrections/:id — admin + management + proofreader + website (full); ads (done only, product must be ready)
+router.put('/corrections/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const role = req.userRole ?? ''
+  const fullRoles = ['admin', 'management', 'proofreader', 'website']
+
+  if (!fullRoles.includes(role) && role !== 'ads') {
+    return res.status(403).json({ error: 'Insufficient permissions' })
+  }
+
+  let updateData = req.body
+  if (role === 'ads') {
+    // ads may only toggle done, and only when the product is ready_for_revision
+    const correction = await supabase
+      .from('proof_corrections').select('product_id').eq('id', req.params.id).single()
+    if (correction.error) return res.status(500).json({ error: correction.error.message })
+
+    const product = await supabase
+      .from('proof_products').select('ready_for_revision').eq('id', correction.data.product_id).single()
+    if (product.error) return res.status(500).json({ error: product.error.message })
+    if (!product.data.ready_for_revision) return res.status(403).json({ error: 'Product is not ready for revision' })
+
+    const { done } = req.body as { done?: boolean }
+    updateData = { done }
+  }
+
   const { data, error } = await supabase
     .from('proof_corrections')
-    .update(req.body)
+    .update(updateData)
     .eq('id', req.params.id)
     .select()
     .single()
