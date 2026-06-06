@@ -51,21 +51,28 @@ router.post('/products', authenticate, requireManagement, async (req: AuthReques
   res.status(201).json(data)
 })
 
-// PUT /products/:id — admin + management (full update); website (links only)
+// PUT /products/:id
+// admin + management: full update
+// proofreader: ready_for_revision only
+// ads: done only
+// website: pdp_url, drive_folder, done
 router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
-  const fullRoles = ['admin', 'management']
-  const linkRoles = ['website']
 
-  if (!fullRoles.includes(role) && !linkRoles.includes(role)) {
+  let updateData: Record<string, unknown>
+  if (role === 'admin' || role === 'management') {
+    updateData = req.body
+  } else if (role === 'proofreader') {
+    const { ready_for_revision } = req.body as { ready_for_revision?: boolean }
+    updateData = { ready_for_revision }
+  } else if (role === 'ads') {
+    const { done } = req.body as { done?: boolean }
+    updateData = { done }
+  } else if (role === 'website') {
+    const { pdp_url, drive_folder, done } = req.body as { pdp_url?: string; drive_folder?: string; done?: boolean }
+    updateData = { pdp_url, drive_folder, done }
+  } else {
     return res.status(403).json({ error: 'Insufficient permissions' })
-  }
-
-  let updateData = req.body
-  if (linkRoles.includes(role)) {
-    // Website may only update the product links
-    const { pdp_url, drive_folder } = req.body as { pdp_url?: string; drive_folder?: string }
-    updateData = { pdp_url, drive_folder }
   }
 
   const { data, error } = await supabase
