@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 
@@ -15,7 +15,7 @@ router.get('/members', authenticate, async (_req: AuthRequest, res: Response) =>
   res.json(data ?? [])
 })
 
-router.post('/members', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/members', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('team_members')
     .insert({ name: req.body.name })
@@ -25,7 +25,7 @@ router.post('/members', authenticate, requireAdmin, async (req: AuthRequest, res
   res.status(201).json(data)
 })
 
-router.delete('/members/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/members/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase
     .from('team_members')
     .delete()

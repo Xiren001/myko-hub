@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, AuthRequest } from '../middleware/auth'
 import { monthStart, monthEnd } from '../utils/calculations'
 
 const router = Router()
@@ -22,7 +22,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json({ mistakes: data ?? [], categoryCounts: counts })
 })
 
-router.post('/bulk', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/bulk', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const rows = (req.body as Record<string, unknown>[]).map(r => ({
     ...r,
     month_year: r.date ? String(r.date).slice(0, 8) + '01' : null,
@@ -32,14 +32,14 @@ router.post('/bulk', authenticate, requireAdmin, async (req: AuthRequest, res: R
   res.status(201).json(data)
 })
 
-router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const body = { ...req.body, month_year: req.body.date ? req.body.date.slice(0, 8) + '01' : null }
   const { data, error } = await supabase.from('mistakes').insert(body).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(data)
 })
 
-router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('mistakes')
     .update(req.body)
@@ -50,7 +50,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   res.json(data)
 })
 
-router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('mistakes').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

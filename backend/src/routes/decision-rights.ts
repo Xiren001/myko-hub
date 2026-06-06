@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 
@@ -15,13 +15,13 @@ router.get('/', authenticate, async (_req: AuthRequest, res: Response) => {
   res.json(data ?? [])
 })
 
-router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.from('decision_rights').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(data)
 })
 
-router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('decision_rights')
     .update({ ...req.body, updated_at: new Date().toISOString() })
@@ -32,7 +32,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   res.json(data)
 })
 
-router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('decision_rights').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

@@ -26,13 +26,7 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
-  const { data: settings } = await supabase.from('settings').select('approver_permissions, viewer_permissions').eq('id', 1).single()
-  res.json({
-    userId: req.userId,
-    userRole: req.userRole,
-    approverPermissions: settings?.approver_permissions ?? null,
-    viewerPermissions: settings?.viewer_permissions ?? null,
-  })
+  res.json({ userId: req.userId, userRole: req.userRole })
 })
 
 app.use('/api/builds', buildsRouter)

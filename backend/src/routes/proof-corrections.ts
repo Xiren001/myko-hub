@@ -1,10 +1,10 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, requireCorrectionWrite, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 
-// GET /products — list all proof_products with correction_count
+// GET /products
 router.get('/products', authenticate, async (_req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_products')
@@ -27,7 +27,7 @@ router.get('/products', authenticate, async (_req: AuthRequest, res: Response) =
   res.json(products)
 })
 
-// GET /products/:id/corrections — list corrections for a product
+// GET /products/:id/corrections
 router.get('/products/:id/corrections', authenticate, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_corrections')
@@ -39,8 +39,8 @@ router.get('/products/:id/corrections', authenticate, async (req: AuthRequest, r
   res.json(data ?? [])
 })
 
-// POST /products — create product (admin only)
-router.post('/products', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// POST /products — admin + management only
+router.post('/products', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_products')
     .insert(req.body)
@@ -51,11 +51,26 @@ router.post('/products', authenticate, requireAdmin, async (req: AuthRequest, re
   res.status(201).json(data)
 })
 
-// PUT /products/:id — update product (admin only)
-router.put('/products/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// PUT /products/:id — admin + management (full update); website (links only)
+router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const role = req.userRole ?? ''
+  const fullRoles = ['admin', 'management']
+  const linkRoles = ['website']
+
+  if (!fullRoles.includes(role) && !linkRoles.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' })
+  }
+
+  let updateData = req.body
+  if (linkRoles.includes(role)) {
+    // Website may only update the product links
+    const { pdp_url, drive_folder } = req.body as { pdp_url?: string; drive_folder?: string }
+    updateData = { pdp_url, drive_folder }
+  }
+
   const { data, error } = await supabase
     .from('proof_products')
-    .update({ ...req.body, updated_at: new Date().toISOString() })
+    .update({ ...updateData, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .select()
     .single()
@@ -64,15 +79,15 @@ router.put('/products/:id', authenticate, requireAdmin, async (req: AuthRequest,
   res.json(data)
 })
 
-// DELETE /products/:id — delete product (admin only)
-router.delete('/products/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// DELETE /products/:id — admin + management only
+router.delete('/products/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('proof_products').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
 
-// POST /corrections — create correction (admin only)
-router.post('/corrections', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// POST /corrections — admin + management + proofreader + website
+router.post('/corrections', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_corrections')
     .insert(req.body)
@@ -83,8 +98,8 @@ router.post('/corrections', authenticate, requireAdmin, async (req: AuthRequest,
   res.status(201).json(data)
 })
 
-// PUT /corrections/:id — update correction (admin only)
-router.put('/corrections/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// PUT /corrections/:id — admin + management + proofreader + website
+router.put('/corrections/:id', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_corrections')
     .update(req.body)
@@ -96,8 +111,8 @@ router.put('/corrections/:id', authenticate, requireAdmin, async (req: AuthReque
   res.json(data)
 })
 
-// DELETE /corrections/:id — delete correction (admin only)
-router.delete('/corrections/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// DELETE /corrections/:id — admin + management + proofreader + website
+router.delete('/corrections/:id', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('proof_corrections').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdminOrApprover, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, AuthRequest } from '../middleware/auth'
 import { enrichBuild, avg, monthStart, monthEnd } from '../utils/calculations'
 
 const router = Router()
@@ -134,7 +134,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   })
 })
 
-router.put('/narrative', authenticate, requireAdminOrApprover, async (req: AuthRequest, res: Response) => {
+router.put('/narrative', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { type, week_number, month_year, narrative_text } = req.body
   const { data, error } = await supabase
     .from('report_narratives')

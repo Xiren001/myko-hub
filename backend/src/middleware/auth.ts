@@ -32,17 +32,27 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
     .single()
 
   req.userId = user.id
-  req.userRole = profile?.role ?? 'viewer'
+  req.userRole = profile?.role ?? 'website'
   next()
 }
 
+// Admin only
 export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   if (req.userRole !== 'admin') return res.status(403).json({ error: 'Admin only' })
   next()
 }
 
-export function requireAdminOrApprover(req: AuthRequest, res: Response, next: NextFunction) {
-  if (req.userRole !== 'admin' && req.userRole !== 'approver') {
+// Admin + management (general write access)
+export function requireManagement(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!['admin', 'management'].includes(req.userRole ?? '')) {
+    return res.status(403).json({ error: 'Insufficient permissions' })
+  }
+  next()
+}
+
+// Admin + management + proofreader + website (correction writes; not ads)
+export function requireCorrectionWrite(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!['admin', 'management', 'proofreader', 'website'].includes(req.userRole ?? '')) {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
   next()

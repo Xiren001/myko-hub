@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdminOrApprover, AuthRequest } from '../middleware/auth'
+import { authenticate, requireManagement, AuthRequest } from '../middleware/auth'
 import { monthEnd } from '../utils/calculations'
 
 const router = Router()
@@ -16,7 +16,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json(data ?? [])
 })
 
-router.put('/:date', authenticate, requireAdminOrApprover, async (req: AuthRequest, res: Response) => {
+router.put('/:date', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { notes } = req.body
   const { data, error } = await supabase
     .from('planner_notes')

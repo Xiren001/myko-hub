@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { authenticate, requireAdmin, requireManagement, AuthRequest } from '../middleware/auth'
 import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 
 const router = Router()
@@ -33,7 +33,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json((data ?? []).map(enrichBuild))
 })
 
-router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.status(201).json(enrichBuild(data))
