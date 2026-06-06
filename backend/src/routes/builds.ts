@@ -14,6 +14,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .is('proof_end', null)
     .or('outcome.is.null,outcome.neq.stopped')
     .eq('type', 'jewelry')
+    .neq('language', 'EN')
     .order('into_proofread', { ascending: true })
 
   if (error) return res.status(500).json({ error: error.message })
@@ -35,6 +36,23 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
+
+  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
+    const { count } = await supabase
+      .from('proof_products')
+      .select('id', { count: 'exact', head: true })
+      .eq('product_name', data.product_name)
+      .eq('language', data.language)
+    if ((count ?? 0) === 0) {
+      await supabase.from('proof_products').insert({
+        product_name: data.product_name,
+        language:     data.language,
+        proofreader:  data.proofreader ?? null,
+        done:         false,
+      })
+    }
+  }
+
   res.status(201).json(enrichBuild(data))
 })
 
@@ -58,7 +76,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
 
   // Auto-create/sync a proof_products entry when a build is in proofread.
   // If the language changed, update the existing entry instead of creating a duplicate.
-  if (data.into_proofread && data.language && data.type === 'jewelry') {
+  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
     const newLang = data.language as string
     const oldLang = before?.language as string | undefined
 
