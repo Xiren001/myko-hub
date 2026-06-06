@@ -13,7 +13,6 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .not('into_proofread', 'is', null)
     .is('proof_end', null)
     .or('outcome.is.null,outcome.neq.stopped')
-    .in('language', ['ES', 'DE'])
     .eq('type', 'jewelry')
     .order('into_proofread', { ascending: true })
 
@@ -59,7 +58,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
 
   // Auto-create/sync a proof_products entry when a build is in proofread.
   // If the language changed, update the existing entry instead of creating a duplicate.
-  if (data.into_proofread && ['ES', 'DE'].includes(data.language) && data.type === 'jewelry') {
+  if (data.into_proofread && data.language && data.type === 'jewelry') {
     const newLang = data.language as string
     const oldLang = before?.language as string | undefined
 
