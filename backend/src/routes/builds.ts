@@ -16,17 +16,27 @@ async function assertFunnelWriteOrAdmin(req: AuthRequest, res: Response, buildId
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
-  // Show builds where proofread has started (into_proofread set) but not yet ended (proof_end null)
-  const { data, error } = await supabase
+  const { month } = req.query
+  const ms = month && typeof month === 'string' ? monthStart(month) : undefined
+  const me = month && typeof month === 'string' ? monthEnd(month) : undefined
+
+  let q = supabase
     .from('builds')
     .select('*')
     .not('into_proofread', 'is', null)
-    .is('proof_end', null)
-    .or('outcome.is.null,outcome.neq.stopped')
     .eq('type', 'jewelry')
     .neq('language', 'EN')
+    .order('week_number', { ascending: true })
     .order('into_proofread', { ascending: true })
 
+  if (ms && me) {
+    q = q.gte('month_year', ms).lte('month_year', me)
+  } else {
+    // No month specified — show only currently active (legacy behaviour)
+    q = q.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
+  }
+
+  const { data, error } = await q
   if (error) return res.status(500).json({ error: error.message })
   res.json((data ?? []).map(enrichBuild))
 })
