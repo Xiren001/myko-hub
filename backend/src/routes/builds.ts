@@ -24,7 +24,6 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .from('builds')
     .select('*')
     .not('into_proofread', 'is', null)
-    .eq('type', 'jewelry')
     .neq('language', 'EN')
     .order('week_number', { ascending: true })
     .order('into_proofread', { ascending: true })
