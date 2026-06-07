@@ -6,18 +6,17 @@ import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
-  const buildType = (req.query.type as string) || 'jewelry'
-  let query = supabase
+  // Show builds where proofread has started (into_proofread set) but not yet ended (proof_end null)
+  const { data, error } = await supabase
     .from('builds')
     .select('*')
     .not('into_proofread', 'is', null)
     .is('proof_end', null)
     .or('outcome.is.null,outcome.neq.stopped')
-    .eq('type', buildType)
+    .eq('type', 'jewelry')
     .neq('language', 'EN')
     .order('into_proofread', { ascending: true })
 
-  const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
   res.json((data ?? []).map(enrichBuild))
 })
@@ -38,20 +37,17 @@ router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: 
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
-  if (data.into_proofread && data.language && data.language !== 'EN' &&
-      (data.type === 'jewelry' || data.type === 'funnel')) {
+  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
     const { count } = await supabase
       .from('proof_products')
       .select('id', { count: 'exact', head: true })
       .eq('product_name', data.product_name)
       .eq('language', data.language)
-      .eq('type', data.type)
     if ((count ?? 0) === 0) {
       await supabase.from('proof_products').insert({
         product_name: data.product_name,
         language:     data.language,
         proofreader:  data.proofreader ?? null,
-        type:         data.type,
         done:         false,
       })
     }
@@ -80,32 +76,29 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
 
   // Auto-create/sync a proof_products entry when a build is in proofread.
   // If the language changed, update the existing entry instead of creating a duplicate.
-  if (data.into_proofread && data.language && data.language !== 'EN' &&
-      (data.type === 'jewelry' || data.type === 'funnel')) {
+  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
     const newLang = data.language as string
     const oldLang = before?.language as string | undefined
-    const buildType = data.type as string
 
     if (oldLang && oldLang !== newLang) {
+      // Language changed on an existing proofread build — update the proof_products row
       await supabase.from('proof_products')
         .update({ language: newLang })
         .eq('product_name', data.product_name)
         .eq('language', oldLang)
-        .eq('type', buildType)
     } else {
+      // Same language (or no prior record) — create only if missing
       const { count } = await supabase
         .from('proof_products')
         .select('id', { count: 'exact', head: true })
         .eq('product_name', data.product_name)
         .eq('language', newLang)
-        .eq('type', buildType)
 
       if ((count ?? 0) === 0) {
         await supabase.from('proof_products').insert({
           product_name: data.product_name,
           language:     newLang,
           proofreader:  data.proofreader ?? null,
-          type:         buildType,
           done:         false,
         })
       }

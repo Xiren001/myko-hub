@@ -4,13 +4,11 @@ import { authenticate, requireManagement, requireCorrectionWrite, AuthRequest } 
 
 const router = Router()
 
-// GET /products?type=jewelry|funnel
-router.get('/products', authenticate, async (req: AuthRequest, res: Response) => {
-  const buildType = (req.query.type as string) || 'jewelry'
+// GET /products
+router.get('/products', authenticate, async (_req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_products')
     .select('*')
-    .eq('type', buildType)
     .order('language')
     .order('product_name')
 
