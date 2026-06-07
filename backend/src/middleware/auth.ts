@@ -57,3 +57,11 @@ export function requireCorrectionWrite(req: AuthRequest, res: Response, next: Ne
   }
   next()
 }
+
+// Admin + management + website (mistake log writes)
+export function requireMistakeWrite(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!['admin', 'management', 'website'].includes(req.userRole ?? '')) {
+    return res.status(403).json({ error: 'Insufficient permissions' })
+  }
+  next()
+}
