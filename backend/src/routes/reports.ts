@@ -5,6 +5,15 @@ import { enrichBuild, avg, monthStart, monthEnd } from '../utils/calculations'
 
 const router = Router()
 
+function cycleAvgFor(builds: ReturnType<typeof enrichBuild>[]) {
+  return {
+    buildDays: avg(builds.map(b => b.build_days)),
+    proofDays: avg(builds.map(b => b.proof_days)),
+    testDays:  avg(builds.map(b => b.test_days)),
+    totalDays: avg(builds.filter(b => b.outcome_decided).map(b => b.total_days)),
+  }
+}
+
 router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const { month } = req.query
   const ms = month && typeof month === 'string' ? monthStart(month) : undefined
@@ -19,6 +28,7 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   if (ms && me) mq = mq.gte('month_year', ms).lte('month_year', me)
   const { data: mistakes } = await mq
 
+  const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).single()
   const enriched = (builds ?? []).map(enrichBuild)
   const weeks = [1, 2, 3, 4]
 
@@ -63,7 +73,20 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
     .eq('type', 'weekly')
     .eq('month_year', `${monthStr}-01`)
 
-  res.json({ weekStats, narratives: narratives ?? [] })
+  const jewelry = enriched.filter(b => b.type === 'jewelry')
+  const funnel  = enriched.filter(b => b.type === 'funnel')
+
+  res.json({
+    weekStats,
+    narratives: narratives ?? [],
+    cycleAvgs: { jewelry: cycleAvgFor(jewelry), funnel: cycleAvgFor(funnel) },
+    settings: settings ? {
+      build_target_days: settings.build_target_days,
+      proof_target_days: settings.proof_target_days,
+      test_target_days:  settings.test_target_days,
+      total_target_days: settings.total_target_days,
+    } : null,
+  })
 })
 
 router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => {
@@ -76,6 +99,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const { data: builds, error } = await q
   if (error) return res.status(500).json({ error: error.message })
 
+  const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).single()
   const enriched = (builds ?? []).map(enrichBuild)
   const decided = enriched.filter(b => b.outcome_decided)
 
@@ -135,6 +159,16 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     expandingList: enriched.filter(b => b.outcome === 'expanding').map(toBuildSummary),
     testingList:   enriched.filter(b => b.outcome === 'testing').map(toBuildSummary),
     narrative: narrative ?? null,
+    cycleAvgs: {
+      jewelry: cycleAvgFor(enriched.filter(b => b.type === 'jewelry')),
+      funnel:  cycleAvgFor(enriched.filter(b => b.type === 'funnel')),
+    },
+    settings: settings ? {
+      build_target_days: settings.build_target_days,
+      proof_target_days: settings.proof_target_days,
+      test_target_days:  settings.test_target_days,
+      total_target_days: settings.total_target_days,
+    } : null,
   })
 })
 
