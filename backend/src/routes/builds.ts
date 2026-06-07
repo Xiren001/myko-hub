@@ -3,6 +3,16 @@ import { supabase } from '../supabase'
 import { authenticate, requireAdmin, requireManagement, AuthRequest } from '../middleware/auth'
 import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 
+async function assertFunnelWriteOrAdmin(req: AuthRequest, res: Response, buildId?: string): Promise<boolean> {
+  const role = req.userRole ?? ''
+  if (role === 'admin') return true
+  if (role !== 'website') { res.status(403).json({ error: 'Insufficient permissions' }); return false }
+  if (!buildId) { res.status(403).json({ error: 'Insufficient permissions' }); return false }
+  const { data } = await supabase.from('builds').select('type').eq('id', buildId).single()
+  if (!data || data.type !== 'funnel') { res.status(403).json({ error: 'Insufficient permissions' }); return false }
+  return true
+}
+
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
@@ -33,7 +43,11 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json((data ?? []).map(enrichBuild))
 })
 
-router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+  const role = req.userRole ?? ''
+  const isManagement = role === 'admin' || role === 'management'
+  const isWebsiteFunnel = role === 'website' && req.body.type === 'funnel'
+  if (!isManagement && !isWebsiteFunnel) return res.status(403).json({ error: 'Insufficient permissions' })
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
@@ -56,7 +70,9 @@ router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: 
   res.status(201).json(enrichBuild(data))
 })
 
-router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
+
   // Capture old language before update so we can detect language changes
   const { data: before } = await supabase
     .from('builds')
@@ -108,7 +124,8 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   res.json(enrichBuild(data))
 })
 
-router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
   const { error } = await supabase.from('builds').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
