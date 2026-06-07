@@ -45,6 +45,8 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
       killed: wb.filter(b => b.outcome === 'stopped').length,
       mistakes: wMistakes.length,
       avgBuildDays: avg(wb.map(b => b.build_days)),
+      avgBuildDaysJewelry: avg(wb.filter(b => b.type === 'jewelry').map(b => b.build_days)),
+      avgBuildDaysFunnel: avg(wb.filter(b => b.type === 'funnel').map(b => b.build_days)),
       avgTotalDays: avg(decided.map(b => b.total_days)),
       testedCount: tested.length,
       testedWon: testedWon.length,
@@ -122,6 +124,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
       ? Math.round(expanding / withOutcome.length * 100) + '%'
       : '—',
     avgBuildDays: avg(enriched.map(b => b.build_days)),
+    avgBuildDaysJewelry: avg(enriched.filter(b => b.type === 'jewelry').map(b => b.build_days)),
+    avgBuildDaysFunnel: avg(enriched.filter(b => b.type === 'funnel').map(b => b.build_days)),
     avgTotalDays: avg(decided.map(b => b.total_days)),
     mistakesTotal: mistakeList.length,
     mistakesRepeating: Object.values(categoryCounts).filter(c => c > 1).reduce((s, c) => s + c, 0),
