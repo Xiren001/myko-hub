@@ -20,26 +20,72 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   const ms = month && typeof month === 'string' ? monthStart(month) : undefined
   const me = month && typeof month === 'string' ? monthEnd(month) : undefined
 
-  let q = supabase
+  // ── 1. Builds in proofread ──────────────────────────────────────────────
+  let bq = supabase
     .from('builds')
     .select('*')
     .not('into_proofread', 'is', null)
     .neq('language', 'EN')
-    .order('week_number', { ascending: true })
-    .order('into_proofread', { ascending: true })
 
   if (ms && me) {
-    // Filter by when proofread started, not which month the build belongs to.
-    // Also always include still-active builds (proof_end null) so nothing falls through the cracks.
-    q = q.or(`proof_end.is.null,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
+    bq = bq.or(`proof_end.is.null,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
   } else {
-    // No month specified — show only currently active
-    q = q.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
+    bq = bq.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
   }
 
-  const { data, error } = await q
+  const { data: buildsData, error } = await bq
   if (error) return res.status(500).json({ error: error.message })
-  res.json((data ?? []).map(enrichBuild))
+  const enrichedBuilds = (buildsData ?? []).map(enrichBuild)
+
+  // ── 2. Proof products added directly (not linked to a build) ───────────
+  const { data: ppData } = await supabase
+    .from('proof_products')
+    .select('*')
+    .eq('done', false)
+    .or('language.is.null,language.neq.EN')
+
+  // Deduplicate: skip proof_products already covered by a build (matched by product_name + language)
+  const buildKeys = new Set(
+    enrichedBuilds.map(b => `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`)
+  )
+
+  const orphans = (ppData ?? [])
+    .filter(pp => !buildKeys.has(`${pp.product_name.toLowerCase()}|${pp.language ?? ''}`))
+    .map(pp => ({
+      id: `pp-${pp.id}`,
+      build_id: null as string | null,
+      product_name: pp.product_name as string,
+      language: pp.language as string | null,
+      proofreader: pp.proofreader as string | null,
+      type: null as string | null,
+      week_number: null as number | null,
+      month_year: null as string | null,
+      into_proofread: null as string | null,
+      proof_end: null as string | null,
+      proof_days: null as number | null,
+      outcome: null as string | null,
+      source: 'proof_product' as const,
+    }))
+
+  // ── 3. Normalise build rows to the same shape ──────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildItems = enrichedBuilds.map((b: any) => ({
+    id: b.id as string,
+    build_id: b.id as string,
+    product_name: b.product_name as string,
+    language: b.language as string | null,
+    proofreader: b.proofreader as string | null,
+    type: b.type as string | null,
+    week_number: b.week_number as number | null,
+    month_year: b.month_year as string | null,
+    into_proofread: b.into_proofread as string | null,
+    proof_end: b.proof_end as string | null,
+    proof_days: b.proof_days as number | null,
+    outcome: b.outcome as string | null,
+    source: 'build' as const,
+  }))
+
+  res.json([...buildItems, ...orphans])
 })
 
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
