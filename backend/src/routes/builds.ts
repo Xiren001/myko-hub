@@ -29,9 +29,11 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .order('into_proofread', { ascending: true })
 
   if (ms && me) {
-    q = q.gte('month_year', ms).lte('month_year', me)
+    // Filter by when proofread started, not which month the build belongs to.
+    // Also always include still-active builds (proof_end null) so nothing falls through the cracks.
+    q = q.or(`proof_end.is.null,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
   } else {
-    // No month specified — show only currently active (legacy behaviour)
+    // No month specified — show only currently active
     q = q.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
   }
 
