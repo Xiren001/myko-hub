@@ -37,14 +37,22 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   if (error) return res.status(500).json({ error: error.message })
   const enrichedBuilds = (buildsData ?? []).map(enrichBuild)
 
-  // ── 2. Proof products added directly (not linked to a build) ───────────
-  const { data: ppData } = await supabase
+  // ── 2. Proof products added directly ──────────────────────────────────
+  // Show active (done=false) always; also show done ones inside the selected month range.
+  let ppq = supabase
     .from('proof_products')
     .select('*')
-    .eq('done', false)
     .or('language.is.null,language.neq.EN')
 
-  // Deduplicate: skip proof_products already covered by a build (matched by product_name + language)
+  if (ms && me) {
+    ppq = ppq.or(`done.eq.false,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
+  } else {
+    ppq = ppq.eq('done', false)
+  }
+
+  const { data: ppData } = await ppq
+
+  // Deduplicate: skip proof_products already covered by a build (product_name + language)
   const buildKeys = new Set(
     enrichedBuilds.map(b => `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`)
   )
@@ -57,13 +65,14 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
       product_name: pp.product_name as string,
       language: pp.language as string | null,
       proofreader: pp.proofreader as string | null,
-      type: null as string | null,
+      type: (pp.type ?? 'jewelry') as string,
       week_number: null as number | null,
       month_year: null as string | null,
-      into_proofread: null as string | null,
+      into_proofread: (pp.into_proofread ?? null) as string | null,
       proof_end: null as string | null,
       proof_days: null as number | null,
       outcome: null as string | null,
+      done: pp.done as boolean,
       source: 'proof_product' as const,
     }))
 
@@ -82,6 +91,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     proof_end: b.proof_end as string | null,
     proof_days: b.proof_days as number | null,
     outcome: b.outcome as string | null,
+    done: (b.proof_end !== null) as boolean,
     source: 'build' as const,
   }))
 
