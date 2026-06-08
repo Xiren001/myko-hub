@@ -13,6 +13,57 @@ async function assertFunnelWriteOrAdmin(req: AuthRequest, res: Response, buildId
   return true
 }
 
+// Sync a proof_products row to match a build's current state.
+// Called whenever a jewelry non-EN build that has into_proofread changes.
+async function syncProofProduct(
+  newName: string,
+  newLang: string,
+  proofreader: string | null,
+  oldName: string,
+  oldLang: string,
+  oldProofEnd: string | null,
+  newProofEnd: string | null,
+): Promise<void> {
+  const nameOrLangChanged = oldName !== newName || oldLang !== newLang
+
+  if (nameOrLangChanged) {
+    // Update the existing row in place (rename + lang change)
+    await supabase.from('proof_products')
+      .update({ product_name: newName, language: newLang, proofreader })
+      .eq('product_name', oldName)
+      .eq('language', oldLang)
+  } else {
+    // Upsert: update proofreader if exists, create if missing
+    const { data: pp } = await supabase
+      .from('proof_products')
+      .select('id')
+      .eq('product_name', newName)
+      .eq('language', newLang)
+      .maybeSingle()
+
+    if (pp) {
+      await supabase.from('proof_products')
+        .update({ proofreader })
+        .eq('id', pp.id)
+    } else {
+      await supabase.from('proof_products').insert({
+        product_name: newName,
+        language:     newLang,
+        proofreader,
+        done:         false,
+      })
+    }
+  }
+
+  // Sync done state when proof_end changes
+  if (oldProofEnd !== newProofEnd) {
+    await supabase.from('proof_products')
+      .update({ done: newProofEnd !== null })
+      .eq('product_name', newName)
+      .eq('language', newLang)
+  }
+}
+
 const router = Router()
 
 router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Response) => {
@@ -21,6 +72,8 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   const me = month && typeof month === 'string' ? monthEnd(month) : undefined
 
   // ── 1. Builds in proofread ──────────────────────────────────────────────
+  // Active builds (proof_end IS NULL) are always included.
+  // Done builds are included when their proof_end falls in the selected month.
   let bq = supabase
     .from('builds')
     .select('*')
@@ -28,7 +81,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .neq('language', 'EN')
 
   if (ms && me) {
-    bq = bq.or(`proof_end.is.null,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
+    bq = bq.or(`proof_end.is.null,and(proof_end.gte.${ms},proof_end.lte.${me})`)
   } else {
     bq = bq.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
   }
@@ -38,7 +91,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   const enrichedBuilds = (buildsData ?? []).map(enrichBuild)
 
   // ── 2. Proof products added directly ──────────────────────────────────
-  // Show active (done=false) always; also show done ones inside the selected month range.
+  // Active (done=false) always; done ones included when into_proofread is in the month.
   let ppq = supabase
     .from('proof_products')
     .select('*')
@@ -61,38 +114,38 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .filter(pp => !buildKeys.has(`${pp.product_name.toLowerCase()}|${pp.language ?? ''}`))
     .map(pp => ({
       id: `pp-${pp.id}`,
-      build_id: null as string | null,
-      product_name: pp.product_name as string,
-      language: pp.language as string | null,
-      proofreader: pp.proofreader as string | null,
-      type: (pp.type ?? 'jewelry') as string,
-      week_number: null as number | null,
-      month_year: null as string | null,
+      build_id:       null as string | null,
+      product_name:   pp.product_name as string,
+      language:       pp.language as string | null,
+      proofreader:    pp.proofreader as string | null,
+      type:           (pp.type ?? 'jewelry') as string,
+      week_number:    null as number | null,
+      month_year:     null as string | null,
       into_proofread: (pp.into_proofread ?? null) as string | null,
-      proof_end: null as string | null,
-      proof_days: null as number | null,
-      outcome: null as string | null,
-      done: pp.done as boolean,
-      source: 'proof_product' as const,
+      proof_end:      null as string | null,
+      proof_days:     null as number | null,
+      outcome:        null as string | null,
+      done:           pp.done as boolean,
+      source:         'proof_product' as const,
     }))
 
-  // ── 3. Normalise build rows to the same shape ──────────────────────────
+  // ── 3. Normalise build rows ────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const buildItems = enrichedBuilds.map((b: any) => ({
-    id: b.id as string,
-    build_id: b.id as string,
-    product_name: b.product_name as string,
-    language: b.language as string | null,
-    proofreader: b.proofreader as string | null,
-    type: b.type as string | null,
-    week_number: b.week_number as number | null,
-    month_year: b.month_year as string | null,
+    id:             b.id as string,
+    build_id:       b.id as string,
+    product_name:   b.product_name as string,
+    language:       b.language as string | null,
+    proofreader:    b.proofreader as string | null,
+    type:           b.type as string | null,
+    week_number:    b.week_number as number | null,
+    month_year:     b.month_year as string | null,
     into_proofread: b.into_proofread as string | null,
-    proof_end: b.proof_end as string | null,
-    proof_days: b.proof_days as number | null,
-    outcome: b.outcome as string | null,
-    done: (b.proof_end !== null) as boolean,
-    source: 'build' as const,
+    proof_end:      b.proof_end as string | null,
+    proof_days:     b.proof_days as number | null,
+    outcome:        b.outcome as string | null,
+    done:           (b.proof_end !== null) as boolean,
+    source:         'build' as const,
   }))
 
   res.json([...buildItems, ...orphans])
@@ -119,19 +172,11 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   if (error) return res.status(500).json({ error: error.message })
 
   if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
-    const { count } = await supabase
-      .from('proof_products')
-      .select('id', { count: 'exact', head: true })
-      .eq('product_name', data.product_name)
-      .eq('language', data.language)
-    if ((count ?? 0) === 0) {
-      await supabase.from('proof_products').insert({
-        product_name: data.product_name,
-        language:     data.language,
-        proofreader:  data.proofreader ?? null,
-        done:         false,
-      })
-    }
+    await syncProofProduct(
+      data.product_name, data.language, data.proofreader ?? null,
+      data.product_name, data.language,
+      null, data.proof_end ?? null,
+    )
   }
 
   res.status(201).json(enrichBuild(data))
@@ -140,14 +185,13 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
 
-  // Capture old language before update so we can detect language changes
+  // Capture state before update so we can detect what changed
   const { data: before } = await supabase
     .from('builds')
-    .select('language')
+    .select('language, product_name, proof_end')
     .eq('id', req.params.id)
     .single()
 
-  // Strip computed fields that don't exist as DB columns
   const { phase, build_days, proof_days, test_days, total_days, created_at, ...updateData } = req.body
   const { data, error } = await supabase
     .from('builds')
@@ -157,35 +201,17 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     .single()
   if (error) return res.status(500).json({ error: error.message })
 
-  // Auto-create/sync a proof_products entry when a build is in proofread.
-  // If the language changed, update the existing entry instead of creating a duplicate.
-  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
-    const newLang = data.language as string
-    const oldLang = before?.language as string | undefined
-
-    if (oldLang && oldLang !== newLang) {
-      // Language changed on an existing proofread build — update the proof_products row
-      await supabase.from('proof_products')
-        .update({ language: newLang })
-        .eq('product_name', data.product_name)
-        .eq('language', oldLang)
-    } else {
-      // Same language (or no prior record) — create only if missing
-      const { count } = await supabase
-        .from('proof_products')
-        .select('id', { count: 'exact', head: true })
-        .eq('product_name', data.product_name)
-        .eq('language', newLang)
-
-      if ((count ?? 0) === 0) {
-        await supabase.from('proof_products').insert({
-          product_name: data.product_name,
-          language:     newLang,
-          proofreader:  data.proofreader ?? null,
-          done:         false,
-        })
-      }
-    }
+  // Sync proof_products for jewelry non-EN builds in proofread
+  if (data.into_proofread && data.type === 'jewelry' && data.language && data.language !== 'EN') {
+    await syncProofProduct(
+      data.product_name as string,
+      data.language as string,
+      data.proofreader as string | null ?? null,
+      (before?.product_name ?? data.product_name) as string,
+      (before?.language ?? data.language) as string,
+      (before?.proof_end ?? null) as string | null,
+      (data.proof_end ?? null) as string | null,
+    )
   }
 
   res.json(enrichBuild(data))
@@ -193,8 +219,25 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
 
 router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
+
+  // Fetch build before deleting so we can cascade to proof_products
+  const { data: build } = await supabase
+    .from('builds')
+    .select('product_name, language, type')
+    .eq('id', req.params.id)
+    .single()
+
   const { error } = await supabase.from('builds').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
+
+  // Cascade: remove linked proof_product for jewelry non-EN builds
+  if (build && build.type === 'jewelry' && build.language && build.language !== 'EN') {
+    await supabase.from('proof_products')
+      .delete()
+      .eq('product_name', build.product_name)
+      .eq('language', build.language)
+  }
+
   res.status(204).end()
 })
 

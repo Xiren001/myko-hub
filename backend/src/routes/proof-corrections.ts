@@ -83,6 +83,29 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // When done state changes, sync back to the linked jewelry build
+  if ('done' in updateData && data.language && data.language !== 'EN') {
+    const isDone = data.done as boolean
+    const today = new Date().toISOString().split('T')[0]
+    if (isDone) {
+      await supabase.from('builds')
+        .update({ proof_end: today, updated_at: new Date().toISOString() })
+        .eq('product_name', data.product_name)
+        .eq('language', data.language)
+        .eq('type', 'jewelry')
+        .not('into_proofread', 'is', null)
+        .is('proof_end', null)
+    } else {
+      await supabase.from('builds')
+        .update({ proof_end: null, updated_at: new Date().toISOString() })
+        .eq('product_name', data.product_name)
+        .eq('language', data.language)
+        .eq('type', 'jewelry')
+        .not('into_proofread', 'is', null)
+    }
+  }
+
   res.json(data)
 })
 
