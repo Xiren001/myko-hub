@@ -15,6 +15,7 @@ import decisionRightsRouter from './routes/decision-rights'
 import proofCorrectionsRouter from './routes/proof-corrections'
 import translateRouter from './routes/translate'
 import teamTasksRouter from './routes/team-tasks'
+import adminUsersRouter from './routes/admin-users'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 
@@ -26,7 +27,7 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
-  res.json({ userId: req.userId, userRole: req.userRole })
+  res.json({ userId: req.userId, userRole: req.userRole, userLang: req.userLang ?? null })
 })
 
 app.use('/api/builds', buildsRouter)
@@ -40,6 +41,7 @@ app.use('/api/decision-rights', decisionRightsRouter)
 app.use('/api/proof-corrections', proofCorrectionsRouter)
 app.use('/api/translate', translateRouter)
 app.use('/api/team-tasks', teamTasksRouter)
+app.use('/api/admin/users', adminUsersRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`))

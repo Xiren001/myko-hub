@@ -80,6 +80,8 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .not('into_proofread', 'is', null)
     .neq('language', 'EN')
 
+  if (req.userLang) bq = bq.eq('language', req.userLang)
+
   if (ms && me) {
     bq = bq.or(`proof_end.is.null,and(proof_end.gte.${ms},proof_end.lte.${me})`)
   } else {
@@ -96,6 +98,8 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .from('proof_products')
     .select('*')
     .or('language.is.null,language.neq.EN')
+
+  if (req.userLang) ppq = ppq.eq('language', req.userLang)
 
   if (ms && me) {
     ppq = ppq.or(`done.eq.false,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)

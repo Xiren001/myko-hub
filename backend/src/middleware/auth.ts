@@ -5,6 +5,7 @@ import { supabase } from '../supabase'
 export interface AuthRequest extends Request {
   userId?: string
   userRole?: string
+  userLang?: string   // set for proofreader_XX roles; uppercase e.g. "ES"
 }
 
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
@@ -32,7 +33,15 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
     .single()
 
   req.userId = user.id
-  req.userRole = profile?.role ?? 'website'
+  const rawRole: string = profile?.role ?? 'website'
+  // proofreader_es → role='proofreader', lang='ES'
+  const langMatch = rawRole.match(/^proofreader_([a-z]+)$/i)
+  if (langMatch) {
+    req.userRole = 'proofreader'
+    req.userLang = langMatch[1].toUpperCase()
+  } else {
+    req.userRole = rawRole
+  }
   next()
 }
 
@@ -50,10 +59,15 @@ export function requireManagement(req: AuthRequest, res: Response, next: NextFun
   next()
 }
 
-// Admin + management + proofreader + website (correction writes; not ads)
+// Admin + management + proofreader (incl. lang proofreaders) + website (correction writes; not ads)
 export function requireCorrectionWrite(req: AuthRequest, res: Response, next: NextFunction) {
   if (!['admin', 'management', 'proofreader', 'website'].includes(req.userRole ?? '')) {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
   next()
+}
+
+// Returns true if the request role is admin (no language filter ever applies)
+export function isAdmin(req: AuthRequest): boolean {
+  return req.userRole === 'admin'
 }

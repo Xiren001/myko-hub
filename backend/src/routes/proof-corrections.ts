@@ -5,18 +5,14 @@ import { authenticate, requireManagement, requireCorrectionWrite, AuthRequest } 
 const router = Router()
 
 // GET /products
-router.get('/products', authenticate, async (_req: AuthRequest, res: Response) => {
-  const { data, error } = await supabase
-    .from('proof_products')
-    .select('*')
-    .order('language')
-    .order('product_name')
+router.get('/products', authenticate, async (req: AuthRequest, res: Response) => {
+  let q = supabase.from('proof_products').select('*').order('language').order('product_name')
+  if (req.userLang) q = q.eq('language', req.userLang)
 
+  const { data, error } = await q
   if (error) return res.status(500).json({ error: error.message })
 
-  const { data: counts } = await supabase
-    .from('proof_corrections')
-    .select('product_id')
+  const { data: counts } = await supabase.from('proof_corrections').select('product_id')
 
   const countMap: Record<string, number> = {}
   for (const c of counts ?? []) {
@@ -73,6 +69,12 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     updateData = { pdp_url, drive_folder, done }
   } else {
     return res.status(403).json({ error: 'Insufficient permissions' })
+  }
+
+  // Lang proofreaders can only write to their own language
+  if (req.userLang) {
+    const { data: existing } = await supabase.from('proof_products').select('language').eq('id', req.params.id).single()
+    if (existing?.language !== req.userLang) return res.status(403).json({ error: 'Language access denied' })
   }
 
   const { data, error } = await supabase
