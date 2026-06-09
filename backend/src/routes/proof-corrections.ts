@@ -50,8 +50,9 @@ router.post('/products', authenticate, requireManagement, async (req: AuthReques
 // PUT /products/:id
 // admin + management: full update
 // proofreader: ready_for_revision only
-// ads: done only
-// website: pdp_url, drive_folder, done
+// ads: ads_done only
+// website: pdp_url, drive_folder, website_done
+// done is auto-computed as website_done AND ads_done for ads/website roles
 router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
 
@@ -62,11 +63,13 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     const { ready_for_revision } = req.body as { ready_for_revision?: boolean }
     updateData = { ready_for_revision }
   } else if (role === 'ads') {
-    const { done } = req.body as { done?: boolean }
-    updateData = { done }
+    const { ads_done } = req.body as { ads_done?: boolean }
+    updateData = { ads_done }
   } else if (role === 'website') {
-    const { pdp_url, drive_folder, done } = req.body as { pdp_url?: string; drive_folder?: string; done?: boolean }
-    updateData = { pdp_url, drive_folder, done }
+    const { pdp_url, drive_folder, website_done } = req.body as { pdp_url?: string; drive_folder?: string; website_done?: boolean }
+    updateData = Object.fromEntries(
+      Object.entries({ pdp_url, drive_folder, website_done }).filter(([, v]) => v !== undefined)
+    )
   } else {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
@@ -75,6 +78,22 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
   if (req.userLang) {
     const { data: existing } = await supabase.from('proof_products').select('language').eq('id', req.params.id).single()
     if (existing?.language !== req.userLang) return res.status(403).json({ error: 'Language access denied' })
+  }
+
+  // Auto-compute done = website_done AND ads_done when a split flag is updated
+  let prevDone: boolean | undefined
+  if ('website_done' in updateData || 'ads_done' in updateData) {
+    const { data: cur } = await supabase
+      .from('proof_products')
+      .select('website_done, ads_done, done')
+      .eq('id', req.params.id)
+      .single()
+    if (cur) {
+      prevDone = cur.done
+      const webDone = 'website_done' in updateData ? (updateData.website_done as boolean) : cur.website_done
+      const adsDone = 'ads_done'     in updateData ? (updateData.ads_done     as boolean) : cur.ads_done
+      updateData.done = webDone && adsDone
+    }
   }
 
   const { data, error } = await supabase
@@ -86,8 +105,11 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
 
   if (error) return res.status(500).json({ error: error.message })
 
-  // When done state changes, sync back to the linked jewelry build
-  if ('done' in updateData && data.language && data.language !== 'EN') {
+  // Sync to linked jewelry build when done actually changes
+  const doneChanged = 'done' in updateData && (
+    (role === 'admin' || role === 'management') || data.done !== prevDone
+  )
+  if (doneChanged && data.language && data.language !== 'EN') {
     const isDone = data.done as boolean
     const today = new Date().toISOString().split('T')[0]
     if (isDone) {
