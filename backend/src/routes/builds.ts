@@ -155,6 +155,127 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   res.json([...buildItems, ...orphans])
 })
 
+// Payment overview: all done products from BOTH builds and proof_products
+// Covers the gap where builds have proof_end set but the proof_products sync was missed.
+router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
+  // All jewelry non-EN done builds in proofread
+  let bq = supabase
+    .from('builds')
+    .select('product_name, language, proofreader, proof_end, into_proofread')
+    .eq('type', 'jewelry')
+    .neq('language', 'EN')
+    .not('into_proofread', 'is', null)
+    .not('proof_end', 'is', null)
+
+  if (req.userLang) bq = bq.eq('language', req.userLang)
+  const { data: doneBuilds } = await bq
+
+  // All proof_products with payment info
+  let ppq = supabase
+    .from('proof_products')
+    .select('id, product_name, language, proofreader, done, paid, paid_at, into_proofread')
+  if (req.userLang) ppq = ppq.eq('language', req.userLang)
+  const { data: ppData } = await ppq
+
+  // Build lookup by product_name+language
+  const ppMap = new Map<string, { id: string; paid: boolean; paid_at: string | null; done: boolean }>()
+  for (const pp of ppData ?? []) {
+    ppMap.set(`${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`, {
+      id:      pp.id as string,
+      paid:    (pp.paid as boolean) ?? false,
+      paid_at: (pp.paid_at as string | null) ?? null,
+      done:    pp.done as boolean,
+    })
+  }
+
+  const seen = new Set<string>()
+  const items: Array<{
+    id: string | null
+    product_name: string
+    language: string | null
+    proofreader: string | null
+    proof_end: string | null
+    paid: boolean
+    paid_at: string | null
+  }> = []
+
+  // Build-sourced done items
+  for (const b of doneBuilds ?? []) {
+    const key = `${(b.product_name as string).toLowerCase()}|${b.language ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const pp = ppMap.get(key)
+    items.push({
+      id:           pp?.id ?? null,
+      product_name: b.product_name as string,
+      language:     b.language as string | null,
+      proofreader:  b.proofreader as string | null,
+      proof_end:    b.proof_end as string | null,
+      paid:         pp?.paid ?? false,
+      paid_at:      pp?.paid_at ?? null,
+    })
+  }
+
+  // Orphan done proof_products (not covered by a build)
+  for (const pp of ppData ?? []) {
+    if (!pp.done) continue
+    const key = `${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push({
+      id:           pp.id as string,
+      product_name: pp.product_name as string,
+      language:     pp.language as string | null,
+      proofreader:  pp.proofreader as string | null,
+      proof_end:    null,
+      paid:         (pp.paid as boolean) ?? false,
+      paid_at:      (pp.paid_at as string | null) ?? null,
+    })
+  }
+
+  res.json(items)
+})
+
+// Mark a product as paid; creates a proof_products row if none exists yet (build-sourced orphan)
+router.post('/mark-paid', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
+  const { id, product_name, language, proofreader, paid, paid_at } = req.body as {
+    id?: string
+    product_name: string
+    language: string | null
+    proofreader: string | null
+    paid: boolean
+    paid_at: string | null
+  }
+
+  if (id) {
+    const { error } = await supabase
+      .from('proof_products')
+      .update({ paid, paid_at, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) return res.status(500).json({ error: error.message })
+  } else {
+    // Build-sourced product with no proof_products row yet — upsert by name+lang
+    const { data: existing } = await supabase
+      .from('proof_products')
+      .select('id')
+      .eq('product_name', product_name)
+      .eq('language', language ?? '')
+      .maybeSingle()
+
+    if (existing) {
+      await supabase.from('proof_products')
+        .update({ paid, paid_at, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    } else {
+      await supabase.from('proof_products').insert({
+        product_name, language, proofreader, done: true, paid, paid_at,
+      })
+    }
+  }
+
+  res.json({ ok: true })
+})
+
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   const { type, month } = req.query
   let query = supabase.from('builds').select('*').order('created_at', { ascending: true })
