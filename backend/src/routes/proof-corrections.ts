@@ -58,7 +58,8 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
 
   let updateData: Record<string, unknown>
   if (role === 'admin' || role === 'management') {
-    updateData = req.body
+    const { correction_count, ...rest } = req.body
+    updateData = rest
   } else if (role === 'proofreader') {
     const { ready_for_revision } = req.body as { ready_for_revision?: boolean }
     updateData = { ready_for_revision }
