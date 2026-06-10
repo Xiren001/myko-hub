@@ -172,7 +172,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
   // All proof_products with payment + status info (exclude EN)
   let ppq = supabase
     .from('proof_products')
-    .select('id, product_name, language, proofreader, done, paid, paid_at, into_proofread, ready_for_revision, pdp_url, drive_folder')
+    .select('id, product_name, language, proofreader, done, paid, paid_at, ready_for_revision, pdp_url, drive_folder')
     .or('language.is.null,language.neq.EN')
   if (req.userLang) ppq = ppq.eq('language', req.userLang)
   const { data: ppData } = await ppq
