@@ -158,21 +158,22 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
 
 // Payment overview: all products (done + active) from builds and proof_products
 router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
-  // All jewelry non-EN builds ever in proofread
+  // All non-EN, non-funnel builds ever in proofread
   let bq = supabase
     .from('builds')
     .select('product_name, language, proofreader, proof_end, into_proofread')
-    .eq('type', 'jewelry')
+    .neq('type', 'funnel')
     .neq('language', 'EN')
     .not('into_proofread', 'is', null)
 
   if (req.userLang) bq = bq.eq('language', req.userLang)
   const { data: buildsData } = await bq
 
-  // All proof_products with payment + status info
+  // All proof_products with payment + status info (exclude EN)
   let ppq = supabase
     .from('proof_products')
     .select('id, product_name, language, proofreader, done, paid, paid_at, into_proofread, ready_for_revision, pdp_url, drive_folder')
+    .or('language.is.null,language.neq.EN')
   if (req.userLang) ppq = ppq.eq('language', req.userLang)
   const { data: ppData } = await ppq
 
