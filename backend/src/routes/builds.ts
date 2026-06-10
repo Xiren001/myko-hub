@@ -156,38 +156,44 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   res.json([...buildItems, ...orphans])
 })
 
-// Payment overview: all done products from BOTH builds and proof_products
-// Covers the gap where builds have proof_end set but the proof_products sync was missed.
+// Payment overview: all products (done + active) from builds and proof_products
 router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
-  // All jewelry non-EN done builds in proofread
+  // All jewelry non-EN builds ever in proofread
   let bq = supabase
     .from('builds')
     .select('product_name, language, proofreader, proof_end, into_proofread')
     .eq('type', 'jewelry')
     .neq('language', 'EN')
     .not('into_proofread', 'is', null)
-    .not('proof_end', 'is', null)
 
   if (req.userLang) bq = bq.eq('language', req.userLang)
-  const { data: doneBuilds } = await bq
+  const { data: buildsData } = await bq
 
-  // All proof_products with payment info
+  // All proof_products with payment + status info
   let ppq = supabase
     .from('proof_products')
-    .select('id, product_name, language, proofreader, done, paid, paid_at, into_proofread')
+    .select('id, product_name, language, proofreader, done, paid, paid_at, into_proofread, ready_for_revision, pdp_url, drive_folder')
   if (req.userLang) ppq = ppq.eq('language', req.userLang)
   const { data: ppData } = await ppq
 
   // Build lookup by product_name+language
-  const ppMap = new Map<string, { id: string; paid: boolean; paid_at: string | null; done: boolean }>()
+  const ppMap = new Map<string, {
+    id: string; paid: boolean; paid_at: string | null; done: boolean
+    ready_for_revision: boolean; pdp_url: string | null; drive_folder: string | null
+  }>()
   for (const pp of ppData ?? []) {
     ppMap.set(`${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`, {
-      id:      pp.id as string,
-      paid:    (pp.paid as boolean) ?? false,
-      paid_at: (pp.paid_at as string | null) ?? null,
-      done:    pp.done as boolean,
+      id:                  pp.id as string,
+      paid:                (pp.paid as boolean) ?? false,
+      paid_at:             (pp.paid_at as string | null) ?? null,
+      done:                pp.done as boolean,
+      ready_for_revision:  (pp.ready_for_revision as boolean) ?? false,
+      pdp_url:             (pp.pdp_url as string | null) ?? null,
+      drive_folder:        (pp.drive_folder as string | null) ?? null,
     })
   }
+
+  type Status = 'done' | 'in_proofread' | 'ready' | 'needs_links' | 'active'
 
   const seen = new Set<string>()
   const items: Array<{
@@ -198,14 +204,17 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     proof_end: string | null
     paid: boolean
     paid_at: string | null
+    status: Status
   }> = []
 
-  // Build-sourced done items
-  for (const b of doneBuilds ?? []) {
+  // Build-sourced items (all with into_proofread set)
+  for (const b of buildsData ?? []) {
     const key = `${(b.product_name as string).toLowerCase()}|${b.language ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
     const pp = ppMap.get(key)
+    const isDone = !!(b.proof_end)
+    const status: Status = isDone ? 'done' : 'in_proofread'
     items.push({
       id:           pp?.id ?? null,
       product_name: b.product_name as string,
@@ -214,15 +223,20 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
       proof_end:    b.proof_end as string | null,
       paid:         pp?.paid ?? false,
       paid_at:      pp?.paid_at ?? null,
+      status,
     })
   }
 
-  // Orphan done proof_products (not covered by a build)
+  // Orphan proof_products (not covered by a build)
   for (const pp of ppData ?? []) {
-    if (!pp.done) continue
     const key = `${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
+    let status: Status
+    if (pp.done) status = 'done'
+    else if (pp.ready_for_revision) status = 'ready'
+    else if (!pp.pdp_url || !pp.drive_folder) status = 'needs_links'
+    else status = 'active'
     items.push({
       id:           pp.id as string,
       product_name: pp.product_name as string,
@@ -231,6 +245,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
       proof_end:    null,
       paid:         (pp.paid as boolean) ?? false,
       paid_at:      (pp.paid_at as string | null) ?? null,
+      status,
     })
   }
 
