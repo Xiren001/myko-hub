@@ -162,7 +162,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
   let bq = supabase
     .from('builds')
     .select('product_name, language, proofreader, proof_end, into_proofread')
-    .neq('type', 'funnel')
+    .or('type.is.null,type.neq.funnel')
     .neq('language', 'EN')
     .not('into_proofread', 'is', null)
 
