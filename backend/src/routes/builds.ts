@@ -102,7 +102,8 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   if (req.userLang) ppq = ppq.eq('language', req.userLang)
 
   if (ms && me) {
-    ppq = ppq.or(`done.eq.false,and(into_proofread.gte.${ms},into_proofread.lte.${me})`)
+    const monthStr = typeof month === 'string' ? month : ''
+    ppq = ppq.or(`done.eq.false,month_year.eq.${monthStr}`)
   } else {
     ppq = ppq.eq('done', false)
   }
@@ -123,8 +124,8 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
       language:       pp.language as string | null,
       proofreader:    pp.proofreader as string | null,
       type:           (pp.type ?? 'jewelry') as string,
-      week_number:    null as number | null,
-      month_year:     null as string | null,
+      week_number:    (pp.week_number ?? null) as number | null,
+      month_year:     (pp.month_year ?? null) as string | null,
       into_proofread: (pp.into_proofread ?? null) as string | null,
       proof_end:      null as string | null,
       proof_days:     null as number | null,
