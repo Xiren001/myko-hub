@@ -158,11 +158,11 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
 
 // Payment overview: all products (done + active) from builds and proof_products
 router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
-  // All jewelry non-EN builds ever in proofread
+  // All non-EN, non-funnel builds ever in proofread (mirrors proofread-queue logic)
   let bq = supabase
     .from('builds')
     .select('product_name, language, proofreader, proof_end, into_proofread')
-    .eq('type', 'jewelry')
+    .neq('type', 'funnel')
     .neq('language', 'EN')
     .not('into_proofread', 'is', null)
 
