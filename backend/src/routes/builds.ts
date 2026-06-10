@@ -156,104 +156,133 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   res.json([...buildItems, ...orphans])
 })
 
-// Payment overview: all products (done + active) from builds and proof_products
+// Payment overview — same data source as proofread-queue, with payment fields added
 router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
-  // All non-EN, non-funnel builds ever in proofread (mirrors proofread-queue logic)
+  const { month } = req.query
+  const ms = month && typeof month === 'string' ? monthStart(month) : undefined
+  const me = month && typeof month === 'string' ? monthEnd(month) : undefined
+
+  // ── 1. Builds (same query as proofread-queue) ─────────────────────────
   let bq = supabase
     .from('builds')
-    .select('product_name, language, proofreader, proof_end, into_proofread')
-    .or('type.is.null,type.neq.funnel')
-    .neq('language', 'EN')
+    .select('*')
     .not('into_proofread', 'is', null)
+    .neq('language', 'EN')
 
   if (req.userLang) bq = bq.eq('language', req.userLang)
-  const { data: buildsData } = await bq
 
-  // All proof_products with payment + status info (exclude EN)
-  let ppq = supabase
+  if (ms && me) {
+    bq = bq.or(`proof_end.is.null,and(proof_end.gte.${ms},proof_end.lte.${me})`)
+  } else {
+    bq = bq.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
+  }
+
+  const { data: buildsData, error } = await bq
+  if (error) return res.status(500).json({ error: error.message })
+  const enrichedBuilds = (buildsData ?? []).map(enrichBuild)
+
+  // ── 2. All proof_products for payment lookup (no month filter) ─────────
+  let allPpq = supabase
     .from('proof_products')
-    .select('id, product_name, language, proofreader, done, paid, paid_at, ready_for_revision, pdp_url, drive_folder')
+    .select('*')
     .or('language.is.null,language.neq.EN')
-  if (req.userLang) ppq = ppq.eq('language', req.userLang)
-  const { data: ppData } = await ppq
+  if (req.userLang) allPpq = allPpq.eq('language', req.userLang)
+  const { data: allPpData } = await allPpq
 
-  // Build lookup by product_name+language
+  // Build payment map keyed by product_name|language
   const ppMap = new Map<string, {
     id: string; paid: boolean; paid_at: string | null; done: boolean
     ready_for_revision: boolean; pdp_url: string | null; drive_folder: string | null
   }>()
-  for (const pp of ppData ?? []) {
+  for (const pp of allPpData ?? []) {
     ppMap.set(`${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`, {
-      id:                  pp.id as string,
-      paid:                (pp.paid as boolean) ?? false,
-      paid_at:             (pp.paid_at as string | null) ?? null,
-      done:                pp.done as boolean,
-      ready_for_revision:  (pp.ready_for_revision as boolean) ?? false,
-      pdp_url:             (pp.pdp_url as string | null) ?? null,
-      drive_folder:        (pp.drive_folder as string | null) ?? null,
+      id:                 pp.id as string,
+      paid:               (pp.paid as boolean) ?? false,
+      paid_at:            (pp.paid_at as string | null) ?? null,
+      done:               pp.done as boolean,
+      ready_for_revision: (pp.ready_for_revision as boolean) ?? false,
+      pdp_url:            (pp.pdp_url as string | null) ?? null,
+      drive_folder:       (pp.drive_folder as string | null) ?? null,
     })
   }
+
+  // ── 3. Month-filtered proof_products for orphan display ────────────────
+  const ppMonthFiltered = (allPpData ?? []).filter(pp => {
+    if (!pp.done) return true
+    if (ms && me) return pp.month_year === (typeof month === 'string' ? month : '')
+    return false
+  })
+
+  // ── 4. Deduplicate: orphans are proof_products not covered by a build ──
+  const buildKeys = new Set(
+    enrichedBuilds.map(b => `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`)
+  )
 
   type Status = 'done' | 'in_proofread' | 'ready' | 'needs_links' | 'active'
 
-  const seen = new Set<string>()
-  const items: Array<{
-    id: string | null
-    product_name: string
-    language: string | null
-    proofreader: string | null
-    proof_end: string | null
-    paid: boolean
-    paid_at: string | null
-    status: Status
-  }> = []
+  function ppStatus(pp: Record<string, unknown>): Status {
+    if (pp.done) return 'done'
+    if (pp.ready_for_revision) return 'ready'
+    if (!pp.pdp_url || !pp.drive_folder) return 'needs_links'
+    return 'active'
+  }
 
-  // Build-sourced items (all with into_proofread set)
-  for (const b of buildsData ?? []) {
-    const key = `${(b.product_name as string).toLowerCase()}|${b.language ?? ''}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    const pp = ppMap.get(key)
+  const orphans = ppMonthFiltered
+    .filter(pp => !buildKeys.has(`${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`))
+    .map(pp => ({
+      id:               `pp-${pp.id}`,
+      proof_product_id: pp.id as string,
+      build_id:         null as string | null,
+      product_name:     pp.product_name as string,
+      language:         pp.language as string | null,
+      proofreader:      pp.proofreader as string | null,
+      type:             (pp.type ?? 'jewelry') as string,
+      week_number:      (pp.week_number ?? null) as number | null,
+      month_year:       (pp.month_year ?? null) as string | null,
+      into_proofread:   null as string | null,
+      proof_end:        null as string | null,
+      proof_days:       null as number | null,
+      outcome:          null as string | null,
+      done:             pp.done as boolean,
+      source:           'proof_product' as const,
+      paid:             (pp.paid as boolean) ?? false,
+      paid_at:          (pp.paid_at as string | null) ?? null,
+      status:           ppStatus(pp as Record<string, unknown>),
+    }))
+
+  // ── 5. Build items with payment info ───────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildItems = enrichedBuilds.map((b: any) => {
+    const key = `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`
+    const pp  = ppMap.get(key)
     const isDone = !!(b.proof_end) || pp?.done
     let status: Status
-    if (isDone) status = 'done'
+    if (isDone)                   status = 'done'
     else if (pp?.ready_for_revision) status = 'ready'
-    else status = 'in_proofread'
-    items.push({
-      id:           pp?.id ?? null,
-      product_name: b.product_name as string,
-      language:     b.language as string | null,
-      proofreader:  b.proofreader as string | null,
-      proof_end:    b.proof_end as string | null,
-      paid:         pp?.paid ?? false,
-      paid_at:      pp?.paid_at ?? null,
+    else                          status = 'in_proofread'
+    return {
+      id:               b.id as string,
+      proof_product_id: pp?.id ?? null,
+      build_id:         b.id as string,
+      product_name:     b.product_name as string,
+      language:         b.language as string | null,
+      proofreader:      b.proofreader as string | null,
+      type:             b.type as string | null,
+      week_number:      b.week_number as number | null,
+      month_year:       b.month_year as string | null,
+      into_proofread:   b.into_proofread as string | null,
+      proof_end:        b.proof_end as string | null,
+      proof_days:       b.proof_days as number | null,
+      outcome:          b.outcome as string | null,
+      done:             isDone as boolean,
+      source:           'build' as const,
+      paid:             pp?.paid ?? false,
+      paid_at:          pp?.paid_at ?? null,
       status,
-    })
-  }
+    }
+  })
 
-  // Orphan proof_products (not covered by a build)
-  for (const pp of ppData ?? []) {
-    const key = `${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    let status: Status
-    if (pp.done) status = 'done'
-    else if (pp.ready_for_revision) status = 'ready'
-    else if (!pp.pdp_url || !pp.drive_folder) status = 'needs_links'
-    else status = 'active'
-    items.push({
-      id:           pp.id as string,
-      product_name: pp.product_name as string,
-      language:     pp.language as string | null,
-      proofreader:  pp.proofreader as string | null,
-      proof_end:    null,
-      paid:         (pp.paid as boolean) ?? false,
-      paid_at:      (pp.paid_at as string | null) ?? null,
-      status,
-    })
-  }
-
-  res.json(items)
+  res.json([...buildItems, ...orphans])
 })
 
 // Mark a product as paid; creates a proof_products row if none exists yet (build-sourced orphan)
