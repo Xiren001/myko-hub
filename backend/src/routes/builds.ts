@@ -121,7 +121,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
       id: `pp-${pp.id}`,
       build_id:       null as string | null,
       product_name:   pp.product_name as string,
-      product_url:    (pp.pdp_url ?? null) as string | null,
+      product_url:    (pp.monday_url ?? null) as string | null,
       language:       pp.language as string | null,
       proofreader:    pp.proofreader as string | null,
       type:           (pp.type ?? 'jewelry') as string,
