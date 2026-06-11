@@ -131,6 +131,16 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     }
   }
 
+  // Sync monday_url back to the matching jewelry build
+  if ('monday_url' in updateData && data.language && data.language !== 'EN') {
+    await supabase.from('builds')
+      .update({ monday_url: (data.monday_url ?? null), updated_at: new Date().toISOString() })
+      .eq('product_name', data.product_name as string)
+      .eq('language', data.language as string)
+      .eq('type', 'jewelry')
+      .not('into_proofread', 'is', null)
+  }
+
   res.json(data)
 })
 

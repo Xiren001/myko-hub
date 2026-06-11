@@ -388,6 +388,14 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       (before?.proof_end ?? null) as string | null,
       (data.proof_end ?? null) as string | null,
     )
+
+    // Sync monday_url to linked proof_product
+    if ('monday_url' in updateData) {
+      await supabase.from('proof_products')
+        .update({ monday_url: data.monday_url ?? null })
+        .eq('product_name', data.product_name as string)
+        .eq('language', data.language as string)
+    }
   }
 
   res.json(enrichBuild(data))
