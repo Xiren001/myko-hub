@@ -132,6 +132,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
       proof_days:     null as number | null,
       outcome:        null as string | null,
       done:           pp.done as boolean,
+      created_at:     (pp.created_at ?? null) as string | null,
       source:         'proof_product' as const,
     }))
 
