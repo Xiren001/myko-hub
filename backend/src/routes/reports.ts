@@ -104,13 +104,6 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 
 const TRACKER_LANGS = new Set(['ES', 'DE'])
 
-function computeProofQueue(allProofProducts: ProofProduct[]) {
-  return {
-    wave1:    allProofProducts.filter(pp =>  TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !pp.done).length,
-    wave2plus: allProofProducts.filter(pp => !TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !pp.done).length,
-    done:     allProofProducts.filter(pp => !!pp.done).length,
-  }
-}
 
 function computePaymentStatus(allProofProducts: ProofProduct[]) {
   return {
@@ -252,13 +245,11 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
 
   const weeks = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap, filteredProofProducts))
 
-  const proofQueue = computeProofQueue(allProofProducts)
   const paymentStatus = computePaymentStatus(allProofProducts)
   const settings = extractSettings(settingsResult.data as Record<string, unknown> | null)
 
   res.json({
     weeks,
-    proofQueue,
     paymentStatus,
     settings,
   })
@@ -353,8 +344,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     pct: totalTestedAll.length > 0 ? `${Math.round(winningAll.length / totalTestedAll.length * 100)}%` : '—',
   }
 
-  // Sections 6+7: All proof_products unfiltered
-  const proofQueue = computeProofQueue(allProofProducts)
+  // Section 7: Payment status
   const paymentStatus = computePaymentStatus(allProofProducts)
 
   // Section 8: Translation
@@ -371,7 +361,6 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     inTesting,
     inExpanding,
     winning,
-    proofQueue,
     paymentStatus,
     translation,
     byWeek,
