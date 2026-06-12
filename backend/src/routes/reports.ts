@@ -12,6 +12,7 @@ interface ProofProduct {
   month_year: string | null
   done: boolean | null
   paid: boolean | null
+  build_id: string | null
   ready_for_revision_at: string | null
   website_done_at: string | null
   ads_done_at: string | null
@@ -100,9 +101,17 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 }
 
 function computeProofQueue(allProofProducts: ProofProduct[]) {
+  const tracker = allProofProducts.filter(pp => pp.build_id != null)
+  const direct = allProofProducts.filter(pp => pp.build_id == null)
   return {
-    inProgress: allProofProducts.filter(pp => pp.done === false).length,
-    done: allProofProducts.filter(pp => pp.done === true).length,
+    tracker: {
+      inProgress: tracker.filter(pp => pp.done === false).length,
+      done: tracker.filter(pp => pp.done === true).length,
+    },
+    direct: {
+      inProgress: direct.filter(pp => pp.done === false).length,
+      done: direct.filter(pp => pp.done === true).length,
+    },
   }
 }
 
