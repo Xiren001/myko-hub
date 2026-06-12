@@ -104,17 +104,11 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 
 const TRACKER_LANGS = new Set(['ES', 'DE'])
 
-const isDone = (pp: ProofProduct) => !!(pp.website_done && pp.ads_done)
-
 function computeProofQueue(allProofProducts: ProofProduct[]) {
   return {
-    wave1: allProofProducts.filter(pp =>
-      TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !isDone(pp)
-    ).length,
-    wave2plus: allProofProducts.filter(pp =>
-      !TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !isDone(pp)
-    ).length,
-    done: allProofProducts.filter(isDone).length,
+    wave1:    allProofProducts.filter(pp =>  TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !pp.done).length,
+    wave2plus: allProofProducts.filter(pp => !TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !pp.done).length,
+    done:     allProofProducts.filter(pp => !!pp.done).length,
   }
 }
 
