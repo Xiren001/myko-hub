@@ -222,7 +222,7 @@ function computeWeekData(
     if (b.outcome !== 'stopped') return false
     // Use week_number if set, otherwise derive from phase1_start date
     if (b.week_number != null) return b.week_number === weekNum
-    const dateStr = (b.phase1_start ?? b.created_at) as string | null
+    const dateStr = b.phase1_start as string | null
     if (!dateStr) return false
     const day = new Date(dateStr).getDate()
     return Math.min(4, Math.ceil(day / 7)) === weekNum
