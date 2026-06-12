@@ -159,11 +159,15 @@ function computeWeekData(
   }
 
   // Section 2: Expanding Products — sourced from proof_products directly (not builds)
+  // Use created_at for week determination — week_number/month_year may be null on directly-added products
   const newBuildKeys = new Set(
     newBuilds.map(b => `${(b.product_name as string || '').toLowerCase().trim()}_${(b.language as string || '').toLowerCase().trim()}`)
   )
   const expandingPP = filteredProofProducts.filter(pp => {
-    if (pp.week_number !== weekNum) return false
+    if (!pp.created_at) return false
+    const day = new Date(pp.created_at).getDate()
+    const week = Math.min(4, Math.ceil(day / 7))
+    if (week !== weekNum) return false
     const key = `${(pp.product_name || '').toLowerCase().trim()}_${(pp.language || '').toLowerCase().trim()}`
     return !newBuildKeys.has(key)
   })
@@ -224,9 +228,8 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const ms = monthStart(monthStr)
   const me = monthEnd(monthStr)
 
-  const [buildsResult, proofFilteredResult, proofAllResult, settingsResult] = await Promise.all([
+  const [buildsResult, proofAllResult, settingsResult] = await Promise.all([
     supabase.from('builds').select('*').gte('month_year', ms).lte('month_year', me),
-    supabase.from('proof_products').select('*').gte('month_year', ms).lte('month_year', me),
     supabase.from('proof_products').select('*'),
     supabase.from('settings').select('*').eq('id', 1).single(),
   ])
@@ -236,8 +239,9 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const enriched = ((buildsResult.data ?? []) as RawBuild[]).map(enrichBuild)
   const jewelryBuilds = enriched.filter(b => b.type === 'jewelry')
 
-  const filteredProofProducts = (proofFilteredResult.data ?? []) as ProofProduct[]
   const allProofProducts = (proofAllResult.data ?? []) as ProofProduct[]
+  // Filter by created_at — month_year/week_number may be null on directly-added products
+  const filteredProofProducts = allProofProducts.filter(pp => pp.created_at?.startsWith(monthStr))
   const proofMap = buildProofMap(filteredProofProducts)
 
   const weeks = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap, filteredProofProducts))
@@ -260,9 +264,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const ms = monthStart(monthStr)
   const me = monthEnd(monthStr)
 
-  const [buildsResult, proofFilteredResult, proofAllResult, settingsResult] = await Promise.all([
+  const [buildsResult, proofAllResult, settingsResult] = await Promise.all([
     supabase.from('builds').select('*').gte('month_year', ms).lte('month_year', me),
-    supabase.from('proof_products').select('*').gte('month_year', ms).lte('month_year', me),
     supabase.from('proof_products').select('*'),
     supabase.from('settings').select('*').eq('id', 1).single(),
   ])
@@ -272,8 +275,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const enriched = ((buildsResult.data ?? []) as RawBuild[]).map(enrichBuild)
   const jewelryBuilds = enriched.filter(b => b.type === 'jewelry')
 
-  const filteredProofProducts = (proofFilteredResult.data ?? []) as ProofProduct[]
   const allProofProducts = (proofAllResult.data ?? []) as ProofProduct[]
+  const filteredProofProducts = allProofProducts.filter(pp => pp.created_at?.startsWith(monthStr))
   const proofMap = buildProofMap(filteredProofProducts)
 
   // Monthly aggregations for jewelry only
