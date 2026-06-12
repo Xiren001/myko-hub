@@ -163,18 +163,19 @@ router.post('/corrections', authenticate, requireCorrectionWrite, async (req: Au
   res.status(201).json(data)
 })
 
-// PUT /corrections/:id — admin + management + proofreader (full); ads (done only, product must be ready)
+// PUT /corrections/:id — admin + management + proofreader (full); ads + website (done only, product must be ready)
 router.put('/corrections/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
   const fullRoles = ['admin', 'management', 'proofreader']
+  const doneOnlyRoles = ['ads', 'website']
 
-  if (!fullRoles.includes(role) && role !== 'ads') {
+  if (!fullRoles.includes(role) && !doneOnlyRoles.includes(role)) {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
 
   let updateData = req.body
-  if (role === 'ads') {
-    // ads may only toggle done, and only when the product is ready_for_revision
+  if (doneOnlyRoles.includes(role)) {
+    // ads + website may only toggle done, and only when the product is ready_for_revision
     const correction = await supabase
       .from('proof_corrections').select('product_id').eq('id', req.params.id).single()
     if (correction.error) return res.status(500).json({ error: correction.error.message })
