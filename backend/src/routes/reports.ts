@@ -110,11 +110,11 @@ function computeProofQueue(allProofProducts: ProofProduct[]) {
   })
   return {
     tracker: {
-      inProgress: tracker.filter(pp => pp.done === false).length,
+      inProgress: tracker.filter(pp => pp.done !== true).length,
       done: tracker.filter(pp => pp.done === true).length,
     },
     direct: {
-      inProgress: direct.filter(pp => pp.done === false).length,
+      inProgress: direct.filter(pp => pp.done !== true).length,
       done: direct.filter(pp => pp.done === true).length,
     },
   }
