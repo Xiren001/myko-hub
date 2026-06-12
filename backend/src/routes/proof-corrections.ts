@@ -75,6 +75,12 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
 
+  // Stamp timestamps when boolean flags turn true
+  const _now = new Date().toISOString()
+  if (updateData.ready_for_revision === true) updateData.ready_for_revision_at = _now
+  if (updateData.website_done === true) updateData.website_done_at = _now
+  if (updateData.ads_done === true) updateData.ads_done_at = _now
+
   // Lang proofreaders can only write to their own language
   if (req.userLang) {
     const { data: existing } = await supabase.from('proof_products').select('language').eq('id', req.params.id).single()
