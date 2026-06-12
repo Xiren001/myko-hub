@@ -100,9 +100,14 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
   }
 }
 
+const TRACKER_LANGS = new Set(['ES', 'DE'])
+
 function computeProofQueue(allProofProducts: ProofProduct[]) {
-  const tracker = allProofProducts.filter(pp => pp.build_id != null)
-  const direct = allProofProducts.filter(pp => pp.build_id == null)
+  const tracker = allProofProducts.filter(pp => TRACKER_LANGS.has((pp.language || '').toUpperCase()))
+  const direct = allProofProducts.filter(pp => {
+    const lang = (pp.language || '').toUpperCase()
+    return !TRACKER_LANGS.has(lang) && lang !== 'EN'
+  })
   return {
     tracker: {
       inProgress: tracker.filter(pp => pp.done === false).length,
