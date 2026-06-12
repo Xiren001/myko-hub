@@ -57,6 +57,21 @@ function calcProofStats(
   }
 }
 
+function calcProofStatsFromProducts(proofProducts: ProofProduct[]) {
+  const done = proofProducts.filter(pp => pp.done === true)
+  return {
+    avgProofDays: avg(done.map(pp => {
+      const w = pp.website_done_at
+      const a = pp.ads_done_at
+      const maxEnd = w && a ? (w > a ? w : a) : (w ?? a ?? null)
+      return daysBetween(pp.created_at, maxEnd)
+    })),
+    avgProofreadTurnaround: avg(done.map(pp => daysBetween(pp.created_at, pp.ready_for_revision_at))),
+    avgWebRevisionDays: avg(done.map(pp => daysBetween(pp.ready_for_revision_at, pp.website_done_at))),
+    avgAdsRevisionDays: avg(done.map(pp => daysBetween(pp.ready_for_revision_at, pp.ads_done_at))),
+  }
+}
+
 function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
   // EN: avg phase1 build days for EN builds (include any build with build_days set)
   const enBuilds = jewelryBuilds.filter(b => {
@@ -117,7 +132,8 @@ function extractSettings(settings: Record<string, unknown> | null) {
 function computeWeekData(
   weekNum: number,
   jewelryBuilds: ReturnType<typeof enrichBuild>[],
-  proofMap: Map<string, ProofProduct>
+  proofMap: Map<string, ProofProduct>,
+  filteredProofProducts: ProofProduct[]
 ) {
   const wb = jewelryBuilds.filter(b => b.week_number === weekNum)
 
@@ -142,16 +158,23 @@ function computeWeekData(
     products: newBuilds.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
   }
 
-  // Section 2: Expanding Products — phase1_start IS NULL AND into_proofread IS NOT NULL
-  const expandingProducts = wb.filter(b => b.phase1_start == null && b.into_proofread != null)
-  const expandingProofStats = calcProofStats(expandingProducts, proofMap)
+  // Section 2: Expanding Products — sourced from proof_products directly (not builds)
+  const newBuildKeys = new Set(
+    newBuilds.map(b => `${(b.product_name as string || '').toLowerCase().trim()}_${(b.language as string || '').toLowerCase().trim()}`)
+  )
+  const expandingPP = filteredProofProducts.filter(pp => {
+    if (pp.week_number !== weekNum) return false
+    const key = `${(pp.product_name || '').toLowerCase().trim()}_${(pp.language || '').toLowerCase().trim()}`
+    return !newBuildKeys.has(key)
+  })
+  const expandingPPStats = calcProofStatsFromProducts(expandingPP)
   const section2 = {
-    count: expandingProducts.length,
-    avgProofDays: avg(expandingProducts.map(b => b.proof_days)),
-    avgProofreadTurnaround: expandingProofStats.avgProofreadTurnaround,
-    avgWebRevisionDays: expandingProofStats.avgWebRevisionDays,
-    avgAdsRevisionDays: expandingProofStats.avgAdsRevisionDays,
-    products: expandingProducts.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
+    count: expandingPP.length,
+    avgProofDays: expandingPPStats.avgProofDays,
+    avgProofreadTurnaround: expandingPPStats.avgProofreadTurnaround,
+    avgWebRevisionDays: expandingPPStats.avgWebRevisionDays,
+    avgAdsRevisionDays: expandingPPStats.avgAdsRevisionDays,
+    products: expandingPP.map(pp => ({ product_name: pp.product_name as string, language: pp.language })),
   }
 
   // Section 3: In Testing — outcome='testing'
@@ -181,6 +204,9 @@ function computeWeekData(
     pct: totalTested.length > 0 ? `${Math.round(winning.length / totalTested.length * 100)}%` : '—',
   }
 
+  // Section 8: Translation — per week
+  const translation = computeTranslation(wb)
+
   return {
     week: weekNum,
     newBuilds: section1,
@@ -188,6 +214,7 @@ function computeWeekData(
     inTesting: section3,
     inExpanding: section4,
     winning: section5,
+    translation,
   }
 }
 
@@ -213,18 +240,16 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const allProofProducts = (proofAllResult.data ?? []) as ProofProduct[]
   const proofMap = buildProofMap(filteredProofProducts)
 
-  const weeks = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap))
+  const weeks = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap, filteredProofProducts))
 
   const proofQueue = computeProofQueue(allProofProducts)
   const paymentStatus = computePaymentStatus(allProofProducts)
-  const translation = computeTranslation(jewelryBuilds)
   const settings = extractSettings(settingsResult.data as Record<string, unknown> | null)
 
   res.json({
     weeks,
     proofQueue,
     paymentStatus,
-    translation,
     settings,
   })
 })
@@ -274,16 +299,22 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     products: newBuildsAll.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
   }
 
-  // Section 2: Expanding Products (monthly agg)
-  const expandingProductsAll = jewelryBuilds.filter(b => b.phase1_start == null && b.into_proofread != null)
-  const expandingProofStats = calcProofStats(expandingProductsAll, proofMap)
+  // Section 2: Expanding Products (monthly agg) — sourced from proof_products directly
+  const newBuildKeysAll = new Set(
+    newBuildsAll.map(b => `${(b.product_name as string || '').toLowerCase().trim()}_${(b.language as string || '').toLowerCase().trim()}`)
+  )
+  const expandingPPAll = filteredProofProducts.filter(pp => {
+    const key = `${(pp.product_name || '').toLowerCase().trim()}_${(pp.language || '').toLowerCase().trim()}`
+    return !newBuildKeysAll.has(key)
+  })
+  const expandingPPStatsAll = calcProofStatsFromProducts(expandingPPAll)
   const expandingProductsAgg = {
-    count: expandingProductsAll.length,
-    avgProofDays: avg(expandingProductsAll.map(b => b.proof_days)),
-    avgProofreadTurnaround: expandingProofStats.avgProofreadTurnaround,
-    avgWebRevisionDays: expandingProofStats.avgWebRevisionDays,
-    avgAdsRevisionDays: expandingProofStats.avgAdsRevisionDays,
-    products: expandingProductsAll.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
+    count: expandingPPAll.length,
+    avgProofDays: expandingPPStatsAll.avgProofDays,
+    avgProofreadTurnaround: expandingPPStatsAll.avgProofreadTurnaround,
+    avgWebRevisionDays: expandingPPStatsAll.avgWebRevisionDays,
+    avgAdsRevisionDays: expandingPPStatsAll.avgAdsRevisionDays,
+    products: expandingPPAll.map(pp => ({ product_name: pp.product_name as string, language: pp.language })),
   }
 
   // Section 3: In Testing (monthly)
@@ -321,7 +352,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   const translation = computeTranslation(jewelryBuilds)
 
   // By-week breakdown
-  const byWeek = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap))
+  const byWeek = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap, filteredProofProducts))
 
   const settings = extractSettings(settingsResult.data as Record<string, unknown> | null)
 
