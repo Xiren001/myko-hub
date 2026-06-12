@@ -43,7 +43,7 @@ function calcProofStats(
 
   for (const b of builds) {
     const pp = getProof(proofMap, b.product_name as string | null)
-    if (pp) {
+    if (pp && pp.done === true) {
       proofreadTurnarounds.push(daysBetween(pp.created_at, pp.ready_for_revision_at))
       webRevisionDays.push(daysBetween(pp.ready_for_revision_at, pp.website_done_at))
       adsRevisionDays.push(daysBetween(pp.ready_for_revision_at, pp.ads_done_at))
@@ -58,49 +58,27 @@ function calcProofStats(
 }
 
 function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
-  // EN avg: daysBetween(phase1_start, phase1_end) for language=EN
+  // EN: avg phase1 build days for EN builds (include any build with build_days set)
   const enBuilds = jewelryBuilds.filter(b => {
     const lang = (b.language as string | null)?.toUpperCase()
-    return lang === 'EN' && b.phase1_start && b.phase1_end
+    return lang === 'EN' && b.build_days != null
   })
-  const enAvgDays = avg(enBuilds.map(b => daysBetween(b.phase1_start as string, b.phase1_end as string)))
+  const enAvg = avg(enBuilds.map(b => b.build_days as number))
 
-  // Group by product_name
-  const byProduct = new Map<string, ReturnType<typeof enrichBuild>[]>()
-  for (const b of jewelryBuilds) {
-    const name = (b.product_name as string | null)?.toLowerCase().trim()
-    if (!name) continue
-    if (!byProduct.has(name)) byProduct.set(name, [])
-    byProduct.get(name)!.push(b)
-  }
+  // ES+DE: avg phase1 build days across all ES and DE builds
+  const esDeBuilds = jewelryBuilds.filter(b => {
+    const lang = (b.language as string | null)?.toUpperCase()
+    return (lang === 'ES' || lang === 'DE') && b.build_days != null
+  })
+  const esDeAvg = avg(esDeBuilds.map(b => b.build_days as number))
 
-  const esDeDelays: (number | null)[] = []
-  const totalDurations: (number | null)[] = []
-
-  for (const [, group] of byProduct) {
-    const enBuild = group.find(b => (b.language as string | null)?.toUpperCase() === 'EN' && b.phase1_end)
-    const esBuild = group.find(b => (b.language as string | null)?.toUpperCase() === 'ES' && b.phase1_end)
-    const deBuild = group.find(b => (b.language as string | null)?.toUpperCase() === 'DE' && b.phase1_end)
-
-    if (enBuild && esBuild && deBuild) {
-      const enEnd = enBuild.phase1_end as string
-      const esEnd = esBuild.phase1_end as string
-      const deEnd = deBuild.phase1_end as string
-      const maxEsDe = esEnd > deEnd ? esEnd : deEnd
-
-      esDeDelays.push(daysBetween(enEnd, maxEsDe))
-
-      const enStart = enBuild.phase1_start as string | null
-      if (enStart) {
-        totalDurations.push(daysBetween(enStart, maxEsDe))
-      }
-    }
-  }
+  // Total: EN avg + ES/DE avg (arithmetic sum of the two averages)
+  const totalAvg = enAvg != null && esDeAvg != null ? Math.round((enAvg + esDeAvg) * 10) / 10 : null
 
   return {
-    en: { avgDays: enAvgDays },
-    esDe: { avgDays: avg(esDeDelays) },
-    total: { avgDays: avg(totalDurations) },
+    en: { avgDays: enAvg },
+    esDe: { avgDays: esDeAvg },
+    total: { avgDays: totalAvg },
   }
 }
 
@@ -149,7 +127,12 @@ function computeWeekData(
     avgPhase1Days: avg(newBuilds.map(b => b.build_days)),
     avgProofDays: avg(newBuilds.map(b => b.proof_days)),
     avgTestDays: avg(newBuilds.map(b => b.test_days)),
-    avgToTestingDays: avg(newBuilds.map(b => daysBetween(b.phase1_start as string | null, b.into_testing as string | null))),
+    avgTotalDays: avg(newBuilds.map(b => {
+      const bd = b.build_days as number | null
+      const pd = b.proof_days as number | null
+      const td = b.test_days as number | null
+      return bd != null && pd != null && td != null ? bd + pd + td : null
+    })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
     avgAdsRevisionDays: newProofStats.avgAdsRevisionDays,
@@ -177,8 +160,8 @@ function computeWeekData(
 
   // Section 4: In Expanding — outcome='expanding'
   const inExpanding = wb.filter(b => b.outcome === 'expanding')
-  const wave1 = inExpanding.filter(b => b.phase1_start == null)
-  const wave2plus = inExpanding.filter(b => b.phase1_start != null && b.into_testing != null)
+  const wave1 = inExpanding.filter(b => b.phase1_start != null)
+  const wave2plus = inExpanding.filter(b => b.phase1_start == null)
   const section4 = {
     wave1Count: wave1.length,
     wave2plusCount: wave2plus.length,
@@ -275,7 +258,12 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     avgPhase1Days: avg(newBuildsAll.map(b => b.build_days)),
     avgProofDays: avg(newBuildsAll.map(b => b.proof_days)),
     avgTestDays: avg(newBuildsAll.map(b => b.test_days)),
-    avgToTestingDays: avg(newBuildsAll.map(b => daysBetween(b.phase1_start as string | null, b.into_testing as string | null))),
+    avgTotalDays: avg(newBuildsAll.map(b => {
+      const bd = b.build_days as number | null
+      const pd = b.proof_days as number | null
+      const td = b.test_days as number | null
+      return bd != null && pd != null && td != null ? bd + pd + td : null
+    })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
     avgAdsRevisionDays: newProofStats.avgAdsRevisionDays,
@@ -303,8 +291,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
 
   // Section 4: In Expanding (monthly)
   const inExpandingAll = jewelryBuilds.filter(b => b.outcome === 'expanding')
-  const wave1All = inExpandingAll.filter(b => b.phase1_start == null)
-  const wave2plusAll = inExpandingAll.filter(b => b.phase1_start != null && b.into_testing != null)
+  const wave1All = inExpandingAll.filter(b => b.phase1_start != null)
+  const wave2plusAll = inExpandingAll.filter(b => b.phase1_start == null)
   const inExpanding = {
     wave1Count: wave1All.length,
     wave2plusCount: wave2plusAll.length,
