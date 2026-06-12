@@ -163,10 +163,10 @@ router.post('/corrections', authenticate, requireCorrectionWrite, async (req: Au
   res.status(201).json(data)
 })
 
-// PUT /corrections/:id — admin + management + proofreader + website (full); ads (done only, product must be ready)
+// PUT /corrections/:id — admin + management + proofreader (full); ads (done only, product must be ready)
 router.put('/corrections/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
-  const fullRoles = ['admin', 'management', 'proofreader', 'website']
+  const fullRoles = ['admin', 'management', 'proofreader']
 
   if (!fullRoles.includes(role) && role !== 'ads') {
     return res.status(403).json({ error: 'Insufficient permissions' })

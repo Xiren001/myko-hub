@@ -61,7 +61,7 @@ export function requireManagement(req: AuthRequest, res: Response, next: NextFun
 
 // Admin + management + proofreader (incl. lang proofreaders) + website (correction writes; not ads)
 export function requireCorrectionWrite(req: AuthRequest, res: Response, next: NextFunction) {
-  if (!['admin', 'management', 'proofreader', 'website'].includes(req.userRole ?? '')) {
+  if (!['admin', 'management', 'proofreader'].includes(req.userRole ?? '')) {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
   next()
