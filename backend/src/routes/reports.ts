@@ -11,6 +11,8 @@ interface ProofProduct {
   week_number: number | null
   month_year: string | null
   done: boolean | null
+  website_done: boolean | null
+  ads_done: boolean | null
   paid: boolean | null
   build_id: string | null
   ready_for_revision_at: string | null
@@ -102,15 +104,17 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 
 const TRACKER_LANGS = new Set(['ES', 'DE'])
 
+const isDone = (pp: ProofProduct) => !!(pp.website_done && pp.ads_done)
+
 function computeProofQueue(allProofProducts: ProofProduct[]) {
   return {
     wave1: allProofProducts.filter(pp =>
-      TRACKER_LANGS.has((pp.language || '').toUpperCase()) && pp.done !== true
+      TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !isDone(pp)
     ).length,
     wave2plus: allProofProducts.filter(pp =>
-      !TRACKER_LANGS.has((pp.language || '').toUpperCase()) && pp.done !== true
+      !TRACKER_LANGS.has((pp.language || '').toUpperCase()) && !isDone(pp)
     ).length,
-    done: allProofProducts.filter(pp => pp.done === true).length,
+    done: allProofProducts.filter(isDone).length,
   }
 }
 
