@@ -72,8 +72,10 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
   })
   const esDeAvg = avg(esDeBuilds.map(b => b.build_days as number))
 
-  // Total: EN avg + ES/DE avg (arithmetic sum of the two averages)
-  const totalAvg = enAvg != null && esDeAvg != null ? Math.round((enAvg + esDeAvg) * 10) / 10 : null
+  // Total: arithmetic sum of whatever averages are available
+  const totalAvg = (enAvg != null || esDeAvg != null)
+    ? Math.round(((enAvg ?? 0) + (esDeAvg ?? 0)) * 10) / 10
+    : null
 
   return {
     en: { avgDays: enAvg },
