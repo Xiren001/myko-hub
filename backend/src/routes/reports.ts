@@ -187,15 +187,25 @@ function computeWeekData(
     products: inTesting.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
   }
 
-  // Section 4: In Expanding — outcome='expanding'
-  const inExpanding = wb.filter(b => b.outcome === 'expanding')
-  const wave1 = inExpanding.filter(b => b.phase1_start != null)
-  const wave2plus = inExpanding.filter(b => b.phase1_start == null)
+  // Section 4: In Expanding
+  // Wave 1: builds from tracker (phase1_start set) with outcome='expanding'
+  const inExpandingBuilds = wb.filter(b => b.outcome === 'expanding')
+  const wave1 = inExpandingBuilds.filter(b => b.phase1_start != null)
+  // Wave 2+: directly-added proof products (not from tracker) that are still active this week
+  const wave2plus = filteredProofProducts.filter(pp => {
+    if (!pp.created_at) return false
+    const day = new Date(pp.created_at).getDate()
+    const week = Math.min(4, Math.ceil(day / 7))
+    if (week !== weekNum) return false
+    if (pp.done === true) return false
+    const key = `${(pp.product_name || '').toLowerCase().trim()}_${(pp.language || '').toLowerCase().trim()}`
+    return !newBuildKeys.has(key)
+  })
   const section4 = {
     wave1Count: wave1.length,
     wave2plusCount: wave2plus.length,
     wave1Products: wave1.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
-    wave2plusProducts: wave2plus.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
+    wave2plusProducts: wave2plus.map(pp => ({ product_name: pp.product_name as string, language: pp.language })),
   }
 
   // Section 5: Winning — into_testing IS NOT NULL AND outcome='expanding'
@@ -325,14 +335,18 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
   }
 
   // Section 4: In Expanding (monthly)
-  const inExpandingAll = jewelryBuilds.filter(b => b.outcome === 'expanding')
-  const wave1All = inExpandingAll.filter(b => b.phase1_start != null)
-  const wave2plusAll = inExpandingAll.filter(b => b.phase1_start == null)
+  const inExpandingBuildsAll = jewelryBuilds.filter(b => b.outcome === 'expanding')
+  const wave1All = inExpandingBuildsAll.filter(b => b.phase1_start != null)
+  const wave2plusAll = filteredProofProducts.filter(pp => {
+    if (pp.done === true) return false
+    const key = `${(pp.product_name || '').toLowerCase().trim()}_${(pp.language || '').toLowerCase().trim()}`
+    return !newBuildKeysAll.has(key)
+  })
   const inExpanding = {
     wave1Count: wave1All.length,
     wave2plusCount: wave2plusAll.length,
     wave1Products: wave1All.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
-    wave2plusProducts: wave2plusAll.map(b => ({ product_name: b.product_name as string, language: b.language as string | null })),
+    wave2plusProducts: wave2plusAll.map(pp => ({ product_name: pp.product_name as string, language: pp.language })),
   }
 
   // Section 5: Winning (monthly)
