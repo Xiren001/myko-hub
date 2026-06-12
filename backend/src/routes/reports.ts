@@ -106,15 +106,15 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 
 function computeProofQueue(allProofProducts: ProofProduct[]) {
   return {
-    inProgress: allProofProducts.filter(pp => pp.done === false),
-    done: allProofProducts.filter(pp => pp.done === true),
+    inProgress: allProofProducts.filter(pp => pp.done === false).length,
+    done: allProofProducts.filter(pp => pp.done === true).length,
   }
 }
 
 function computePaymentStatus(allProofProducts: ProofProduct[]) {
   return {
-    paid: allProofProducts.filter(pp => pp.paid === true),
-    unpaid: allProofProducts.filter(pp => pp.paid === false || pp.paid === null),
+    paid: allProofProducts.filter(pp => pp.paid === true).length,
+    unpaid: allProofProducts.filter(pp => pp.paid === false || pp.paid === null).length,
   }
 }
 
