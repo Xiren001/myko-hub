@@ -217,6 +217,9 @@ function computeWeekData(
     pct: totalTested.length > 0 ? `${Math.round(winning.length / totalTested.length * 100)}%` : '—',
   }
 
+  // Stopped
+  const stopped = wb.filter(b => b.outcome === 'stopped')
+
   // Section 8: Translation — per week
   const translation = computeTranslation(wb)
 
@@ -227,6 +230,7 @@ function computeWeekData(
     inTesting: section3,
     inExpanding: section4,
     winning: section5,
+    stoppedCount: stopped.length,
     translation,
   }
 }
@@ -358,6 +362,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     pct: totalTestedAll.length > 0 ? `${Math.round(winningAll.length / totalTestedAll.length * 100)}%` : '—',
   }
 
+  const stoppedCountAll = jewelryBuilds.filter(b => b.outcome === 'stopped').length
+
   // Section 7: Payment status
   const paymentStatus = computePaymentStatus(allProofProducts)
 
@@ -375,6 +381,7 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     inTesting,
     inExpanding,
     winning,
+    stoppedCount: stoppedCountAll,
     paymentStatus,
     translation,
     byWeek,
