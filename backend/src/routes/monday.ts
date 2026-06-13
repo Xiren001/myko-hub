@@ -21,6 +21,7 @@ const PARENT_BOARD_MAP: Record<string, number> = {
 
 // Subitem board ID → parent board ID
 const SUBITEM_BOARD_MAP: Record<string, string> = {
+  '5025397251': '5025397250',  // Wave 1
   '5029159814': '5029159813',
   '5029160083': '5029160081',
   '5029160188': '5029160187',
