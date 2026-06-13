@@ -96,7 +96,16 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const isSub    = boardId in SUBITEM_BOARD_MAP
 
   try {
-    if (event.type === 'update_column_value') {
+    // change_subitem_column_value fires from the parent board when a subitem column changes
+    if (event.type === 'change_subitem_column_value') {
+      const field = SUB_COL[event.columnId]
+      if (!field) return res.json({ ok: true })
+      const value = parseWebhookValue(event.value, field)
+      await supabase.from('monday_subitems')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('monday_subitem_id', pulseId)
+
+    } else if (event.type === 'update_column_value') {
       const colMap = isSub ? SUB_COL : ITEM_COL
       const field  = colMap[event.columnId]
       if (!field) return res.json({ ok: true })
