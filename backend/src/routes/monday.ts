@@ -141,6 +141,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     } else if (event.type === 'create_pulse' && !isSub && boardId in PARENT_BOARD_MAP) {
       await fetchAndUpsertItem(pulseId, boardId)
+
+    } else if (event.type === 'move_pulse_into_group' && !isSub) {
+      const data = await mondayGql(`{ items(ids: [${pulseId}]) { group { title } } }`)
+      const groupName = data?.data?.items?.[0]?.group?.title ?? null
+      if (groupName) {
+        await supabase.from('monday_items')
+          .update({ group_name: groupName, updated_at: new Date().toISOString() })
+          .eq('monday_item_id', pulseId)
+      }
     }
   } catch (err) {
     console.error('Monday webhook error:', err)
@@ -377,6 +386,27 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
     const resp = await mondayGql(`
       mutation {
         create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: change_column_value) {
+          id board_id
+        }
+      }
+    `)
+    results[boardId] = resp?.data?.create_webhook ?? resp?.errors
+  }
+
+  return res.json({ ok: true, results })
+})
+
+// ── POST /api/monday/register-group-hooks ────────────────────────────────
+// Registers move_pulse_into_group webhooks on all parent boards. Admin only.
+router.post('/register-group-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+
+  const results: Record<string, unknown> = {}
+
+  for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
+    const resp = await mondayGql(`
+      mutation {
+        create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: move_pulse_into_group) {
           id board_id
         }
       }
