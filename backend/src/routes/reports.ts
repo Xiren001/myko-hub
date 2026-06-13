@@ -148,8 +148,8 @@ function computeWeekData(
       const bd = b.build_days as number | null
       const pd = b.proof_days as number | null
       const td = b.test_days as number | null
-      if (bd == null && pd == null && td == null) return null
-      return (bd ?? 0) + (pd ?? 0) + (td ?? 0)
+      if (td == null) return null  // skip builds that haven't completed testing
+      return (bd ?? 0) + (pd ?? 0) + td
     })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
@@ -312,8 +312,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
       const bd = b.build_days as number | null
       const pd = b.proof_days as number | null
       const td = b.test_days as number | null
-      if (bd == null && pd == null && td == null) return null
-      return (bd ?? 0) + (pd ?? 0) + (td ?? 0)
+      if (td == null) return null  // skip builds that haven't completed testing
+      return (bd ?? 0) + (pd ?? 0) + td
     })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
