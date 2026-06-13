@@ -141,15 +141,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     } else if (event.type === 'create_pulse' && !isSub && boardId in PARENT_BOARD_MAP) {
       await fetchAndUpsertItem(pulseId, boardId)
-
-    } else if (event.type === 'move_pulse_into_group' && !isSub) {
-      const data = await mondayGql(`{ items(ids: [${pulseId}]) { group { title } } }`)
-      const groupName = data?.data?.items?.[0]?.group?.title ?? null
-      if (groupName) {
-        await supabase.from('monday_items')
-          .update({ group_name: groupName, updated_at: new Date().toISOString() })
-          .eq('monday_item_id', pulseId)
-      }
     }
   } catch (err) {
     console.error('Monday webhook error:', err)
