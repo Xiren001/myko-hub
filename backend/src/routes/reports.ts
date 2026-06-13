@@ -145,11 +145,8 @@ function computeWeekData(
     avgProofDays: avg(newBuilds.map(b => b.proof_days)),
     avgTestDays: avg(newBuilds.map(b => b.test_days)),
     avgTotalDays: avg(newBuilds.map(b => {
-      const bd = b.build_days as number | null
-      const pd = b.proof_days as number | null
-      const td = b.test_days as number | null
-      if (td == null) return null  // skip builds that haven't completed testing
-      return (bd ?? 0) + (pd ?? 0) + td
+      if (b.test_days == null) return null  // skip builds that haven't completed testing
+      return b.total_days as number | null   // outcome_decided − phase1_start (includes all gaps)
     })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
@@ -309,11 +306,8 @@ router.get('/monthly', authenticate, async (req: AuthRequest, res: Response) => 
     avgProofDays: avg(newBuildsAll.map(b => b.proof_days)),
     avgTestDays: avg(newBuildsAll.map(b => b.test_days)),
     avgTotalDays: avg(newBuildsAll.map(b => {
-      const bd = b.build_days as number | null
-      const pd = b.proof_days as number | null
-      const td = b.test_days as number | null
-      if (td == null) return null  // skip builds that haven't completed testing
-      return (bd ?? 0) + (pd ?? 0) + td
+      if (b.test_days == null) return null  // skip builds that haven't completed testing
+      return b.total_days as number | null   // outcome_decided − phase1_start (includes all gaps)
     })),
     avgProofreadTurnaround: newProofStats.avgProofreadTurnaround,
     avgWebRevisionDays: newProofStats.avgWebRevisionDays,
