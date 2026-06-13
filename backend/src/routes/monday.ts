@@ -9,6 +9,7 @@ const WEBHOOK_URL = 'https://backend-production-1ba8.up.railway.app/api/monday/w
 
 // Parent board ID → wave number (0 = Stopped)
 const PARENT_BOARD_MAP: Record<string, number> = {
+  '5025397250': 1,
   '5029159813': 2,
   '5029160081': 3,
   '5029160187': 4,
@@ -277,6 +278,7 @@ router.post('/import', authenticate, requireAdmin, async (_req: AuthRequest, res
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
   const boards = [
+    { waveNumber: 1, boardId: '5025397250', name: 'Wave 1' },
     { waveNumber: 2, boardId: '5029159813', name: 'Wave 2' },
     { waveNumber: 3, boardId: '5029160081', name: 'Wave 3' },
     { waveNumber: 4, boardId: '5029160187', name: 'Wave 4' },
