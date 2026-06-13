@@ -190,6 +190,76 @@ async function fetchAndUpsertItem(itemId: string, boardId: string): Promise<void
   }
 }
 
+// ── POST /api/monday/sync/:boardId ────────────────────────────────────────
+// Syncs a single wave board. Authenticated (any role).
+router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+
+  const { boardId } = req.params
+
+  const { data: wave, error: waveErr } = await supabase
+    .from('monday_waves').select('id').eq('board_id', boardId).single()
+  if (waveErr || !wave) return res.status(404).json({ error: 'Wave not found' })
+
+  let cursor: string | null = null
+  let count = 0
+
+  try {
+    do {
+      const cursorArg = cursor ? `, cursor: "${cursor}"` : ''
+      const resp = await mondayGql(`{
+        boards(ids: [${boardId}]) {
+          items_page(limit: 50${cursorArg}) {
+            cursor
+            items {
+              id name
+              group { title }
+              column_values { id text }
+              subitems { id name column_values { id text } }
+            }
+          }
+        }
+      }`)
+
+      const page = resp?.data?.boards?.[0]?.items_page
+      if (!page) break
+      cursor = page.cursor ?? null
+
+      for (const item of page.items ?? []) {
+        const itemCols: Record<string, string | null> = {}
+        for (const cv of item.column_values ?? []) {
+          const f = ITEM_COL[cv.id]; if (f) itemCols[f] = cv.text || null
+        }
+
+        const { data: ins } = await supabase.from('monday_items').upsert({
+          wave_id: wave.id, monday_item_id: item.id, name: item.name,
+          group_name: item.group?.title ?? null, ...itemCols,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'monday_item_id' }).select('id').single()
+
+        if (!ins) continue
+
+        for (const sub of item.subitems ?? []) {
+          const subCols: Record<string, unknown> = {}
+          for (const cv of sub.column_values ?? []) {
+            const f = SUB_COL[cv.id]
+            if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
+          }
+          await supabase.from('monday_subitems').upsert({
+            item_id: ins.id, monday_subitem_id: sub.id, name: sub.name, ...subCols,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'monday_subitem_id' })
+        }
+        count++
+      }
+    } while (cursor)
+
+    return res.json({ ok: true, count })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+})
+
 // ── GET /api/monday/waves ─────────────────────────────────────────────────
 router.get('/waves', authenticate, async (_req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
