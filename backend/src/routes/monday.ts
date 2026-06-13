@@ -91,6 +91,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const event = body.event
   if (!event) return res.json({ ok: true })
 
+  console.log('[monday webhook]', JSON.stringify(event))
+
   const boardId  = String(event.boardId)
   const pulseId  = String(event.pulseId)
   const isSub    = boardId in SUBITEM_BOARD_MAP
