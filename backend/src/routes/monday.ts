@@ -141,6 +141,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     } else if (event.type === 'create_pulse' && !isSub && boardId in PARENT_BOARD_MAP) {
       await fetchAndUpsertItem(pulseId, boardId)
+
+    } else if (event.type === 'item_moved_to_any_group' && !isSub) {
+      const data = await mondayGql(`{ items(ids: [${pulseId}]) { group { title } } }`)
+      const groupName = data?.data?.items?.[0]?.group?.title ?? null
+      if (groupName) {
+        await supabase.from('monday_items')
+          .update({ group_name: groupName, updated_at: new Date().toISOString() })
+          .eq('monday_item_id', pulseId)
+      }
     }
   } catch (err) {
     console.error('Monday webhook error:', err)
@@ -387,46 +396,25 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
   return res.json({ ok: true, results })
 })
 
-// ── Background group-name sync ────────────────────────────────────────────
-// Monday.com has no webhook for group moves, so we poll every 10 minutes.
-// ── GET /api/monday/debug/webhook-events ─────────────────────────────────
-router.get('/debug/webhook-events', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
-  const data = await mondayGql(`{ __type(name: "WebhookEventType") { enumValues { name } } }`)
-  return res.json(data?.data?.__type?.enumValues?.map((v: any) => v.name) ?? data)
-})
+// ── POST /api/monday/register-group-move-hooks ───────────────────────────
+// Registers item_moved_to_any_group webhooks on all parent boards. Admin only.
+router.post('/register-group-move-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
-export async function syncGroupNames(): Promise<void> {
-  if (!MONDAY_TOKEN) return
+  const results: Record<string, unknown> = {}
+
   for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
-    try {
-      let cursor: string | null = null
-      do {
-        const cursorArg = cursor ? `, cursor: "${cursor}"` : ''
-        const resp = await mondayGql(`{
-          boards(ids: [${boardId}]) {
-            items_page(limit: 100${cursorArg}) {
-              cursor
-              items { id group { title } }
-            }
-          }
-        }`)
-        const page = resp?.data?.boards?.[0]?.items_page
-        if (!page) break
-        cursor = page.cursor ?? null
-        for (const item of (page.items ?? [])) {
-          const groupName: string | null = item.group?.title ?? null
-          if (groupName) {
-            await supabase.from('monday_items')
-              .update({ group_name: groupName })
-              .eq('monday_item_id', item.id)
-              .neq('group_name', groupName)
-          }
+    const resp = await mondayGql(`
+      mutation {
+        create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: item_moved_to_any_group) {
+          id board_id
         }
-      } while (cursor)
-    } catch (err) {
-      console.error(`[monday] group sync error board ${boardId}:`, err)
-    }
+      }
+    `)
+    results[boardId] = resp?.data?.create_webhook ?? resp?.errors
   }
-}
+
+  return res.json({ ok: true, results })
+})
 
 export default router
