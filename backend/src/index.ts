@@ -16,6 +16,7 @@ import proofCorrectionsRouter from './routes/proof-corrections'
 import translateRouter from './routes/translate'
 import teamTasksRouter from './routes/team-tasks'
 import adminUsersRouter from './routes/admin-users'
+import mondayRouter from './routes/monday'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 
@@ -42,6 +43,7 @@ app.use('/api/proof-corrections', proofCorrectionsRouter)
 app.use('/api/translate', translateRouter)
 app.use('/api/team-tasks', teamTasksRouter)
 app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/monday', mondayRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`))
