@@ -132,15 +132,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
           .eq(idCol, pulseId)
       }
 
-    } else if (event.type === 'delete_pulse') {
+    } else if ((event.type === 'create_pulse' || event.type === 'create_item') && !isSub && boardId in PARENT_BOARD_MAP) {
+      await fetchAndUpsertItem(pulseId, boardId)
+
+    } else if (event.type === 'delete_pulse' || event.type === 'item_deleted' || event.type === 'item_archived' || event.type === 'subitem_deleted' || event.type === 'subitem_archived') {
       if (isSub) {
         await supabase.from('monday_subitems').delete().eq('monday_subitem_id', pulseId)
       } else {
         await supabase.from('monday_items').delete().eq('monday_item_id', pulseId)
       }
-
-    } else if (event.type === 'create_pulse' && !isSub && boardId in PARENT_BOARD_MAP) {
-      await fetchAndUpsertItem(pulseId, boardId)
 
     } else if (event.type === 'move_pulse_into_group' && !isSub) {
       const groupName: string | null = event.destGroup?.title ?? null
@@ -411,6 +411,27 @@ router.post('/register-group-move-hooks', authenticate, requireAdmin, async (_re
       }
     `)
     results[boardId] = resp?.data?.create_webhook ?? resp?.errors
+  }
+
+  return res.json({ ok: true, results })
+})
+
+// ── POST /api/monday/register-item-move-hooks ────────────────────────────
+// Registers create_item + item_deleted webhooks on all parent boards. Admin only.
+router.post('/register-item-move-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+
+  const results: Record<string, unknown> = {}
+
+  for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
+    const [created, deleted] = await Promise.all([
+      mondayGql(`mutation { create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: create_item) { id board_id } }`),
+      mondayGql(`mutation { create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: item_deleted) { id board_id } }`),
+    ])
+    results[boardId] = {
+      create_item: created?.data?.create_webhook ?? created?.errors,
+      item_deleted: deleted?.data?.create_webhook ?? deleted?.errors,
+    }
   }
 
   return res.json({ ok: true, results })
