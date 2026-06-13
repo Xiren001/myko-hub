@@ -389,6 +389,12 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
 
 // ── Background group-name sync ────────────────────────────────────────────
 // Monday.com has no webhook for group moves, so we poll every 10 minutes.
+// ── GET /api/monday/debug/webhook-events ─────────────────────────────────
+router.get('/debug/webhook-events', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  const data = await mondayGql(`{ __type(name: "WebhookEventType") { enumValues { name } } }`)
+  return res.json(data?.data?.__type?.enumValues?.map((v: any) => v.name) ?? data)
+})
+
 export async function syncGroupNames(): Promise<void> {
   if (!MONDAY_TOKEN) return
   for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
