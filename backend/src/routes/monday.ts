@@ -149,6 +149,21 @@ router.post('/webhook', async (req: Request, res: Response) => {
           .update({ group_name: groupName, updated_at: new Date().toISOString() })
           .eq('monday_item_id', pulseId)
       }
+
+    } else if (event.type === 'move_pulse_into_board' && boardId in PARENT_BOARD_MAP) {
+      const { data: destWave } = await supabase
+        .from('monday_waves').select('id').eq('board_id', boardId).single()
+      if (destWave) {
+        const groupName: string | null = event.destGroup?.title ?? null
+        const { data: updated } = await supabase.from('monday_items')
+          .update({ wave_id: destWave.id, group_name: groupName, updated_at: new Date().toISOString() })
+          .eq('monday_item_id', pulseId)
+          .select('id')
+        // Item not in our DB yet — fetch it from Monday.com and insert
+        if (!updated?.length) {
+          await fetchAndUpsertItem(pulseId, boardId)
+        }
+      }
     }
   } catch (err) {
     console.error('Monday webhook error:', err)
