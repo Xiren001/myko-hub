@@ -139,7 +139,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
       if (isSub) {
         await supabase.from('monday_subitems').delete().eq('monday_subitem_id', pulseId)
       } else {
-        await supabase.from('monday_items').delete().eq('monday_item_id', pulseId)
+        // Only delete if the item still belongs to this wave — prevents deleting an item
+        // that was already re-assigned to another wave by move_pulse_into_board
+        const { data: wave } = await supabase
+          .from('monday_waves').select('id').eq('board_id', boardId).single()
+        if (wave) {
+          await supabase.from('monday_items').delete()
+            .eq('monday_item_id', pulseId)
+            .eq('wave_id', wave.id)
+        }
       }
 
     } else if (event.type === 'move_pulse_into_group' && !isSub) {
