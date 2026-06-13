@@ -387,4 +387,40 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
   return res.json({ ok: true, results })
 })
 
+// ── Background group-name sync ────────────────────────────────────────────
+// Monday.com has no webhook for group moves, so we poll every 10 minutes.
+export async function syncGroupNames(): Promise<void> {
+  if (!MONDAY_TOKEN) return
+  for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
+    try {
+      let cursor: string | null = null
+      do {
+        const cursorArg = cursor ? `, cursor: "${cursor}"` : ''
+        const resp = await mondayGql(`{
+          boards(ids: [${boardId}]) {
+            items_page(limit: 100${cursorArg}) {
+              cursor
+              items { id group { title } }
+            }
+          }
+        }`)
+        const page = resp?.data?.boards?.[0]?.items_page
+        if (!page) break
+        cursor = page.cursor ?? null
+        for (const item of (page.items ?? [])) {
+          const groupName: string | null = item.group?.title ?? null
+          if (groupName) {
+            await supabase.from('monday_items')
+              .update({ group_name: groupName })
+              .eq('monday_item_id', item.id)
+              .neq('group_name', groupName)
+          }
+        }
+      } while (cursor)
+    } catch (err) {
+      console.error(`[monday] group sync error board ${boardId}:`, err)
+    }
+  }
+}
+
 export default router
