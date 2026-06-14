@@ -158,18 +158,24 @@ router.post('/webhook', async (req: Request, res: Response) => {
           .eq('monday_item_id', pulseId)
       }
 
-    } else if (event.type === 'move_pulse_into_board' && boardId in PARENT_BOARD_MAP) {
-      const { data: destWave } = await supabase
-        .from('monday_waves').select('id').eq('board_id', boardId).single()
-      if (destWave) {
-        const groupName: string | null = event.destGroup?.title ?? null
-        const { data: updated } = await supabase.from('monday_items')
-          .update({ wave_id: destWave.id, group_name: groupName, updated_at: new Date().toISOString() })
-          .eq('monday_item_id', pulseId)
-          .select('id')
-        // Item not in our DB yet — fetch it from Monday.com and insert
-        if (!updated?.length) {
-          await fetchAndUpsertItem(pulseId, boardId)
+    } else if (event.type === 'move_pulse_into_board') {
+      // boardId = the subscribed board (source), NOT the destination.
+      // Query Monday.com to find where the item actually is now.
+      const itemData = await mondayGql(`{ items(ids: [${pulseId}]) { board { id } group { title } } }`)
+      const currentItem = itemData?.data?.items?.[0]
+      if (currentItem) {
+        const currentBoardId = String(currentItem.board?.id)
+        const currentGroupName: string | null = currentItem.group?.title ?? null
+        const { data: wave } = await supabase
+          .from('monday_waves').select('id').eq('board_id', currentBoardId).single()
+        if (wave) {
+          const { data: updated } = await supabase.from('monday_items')
+            .update({ wave_id: wave.id, group_name: currentGroupName, updated_at: new Date().toISOString() })
+            .eq('monday_item_id', pulseId)
+            .select('id')
+          if (!updated?.length) {
+            await fetchAndUpsertItem(pulseId, currentBoardId)
+          }
         }
       }
     }
