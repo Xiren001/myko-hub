@@ -159,6 +159,27 @@ router.post('/webhook', async (req: Request, res: Response) => {
         }
       }
 
+    } else if ((event.type === 'create_pulse' || event.type === 'create_item') && isSub && event.parentItemId) {
+      // New subitem — fires on the subitems board; parentItemId is in the payload
+      const parentItemId = String(event.parentItemId)
+      const { data: parentItem } = await supabase.from('monday_items')
+        .select('id').eq('monday_item_id', parentItemId).single()
+      if (parentItem) {
+        const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name column_values { id text } } }`)
+        const sub = data?.data?.items?.[0]
+        if (sub) {
+          const subCols: Record<string, unknown> = {}
+          for (const cv of sub.column_values ?? []) {
+            const f = SUB_COL[cv.id]
+            if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
+          }
+          await supabase.from('monday_subitems').upsert({
+            item_id: parentItem.id, monday_subitem_id: sub.id, name: sub.name, ...subCols,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'monday_subitem_id' })
+        }
+      }
+
     } else if ((event.type === 'create_pulse' || event.type === 'create_item') && !isSub && boardId in PARENT_BOARD_MAP) {
       await fetchAndUpsertItem(pulseId, boardId)
 
