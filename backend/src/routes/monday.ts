@@ -293,6 +293,8 @@ router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Respon
 
   let cursor: string | null = null
   let count = 0
+  const seenItemIds: string[] = []
+  const seenSubitemIds: string[] = []
 
   try {
     do {
@@ -316,6 +318,7 @@ router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Respon
       cursor = page.cursor ?? null
 
       for (const item of page.items ?? []) {
+        seenItemIds.push(item.id)
         const itemCols: Record<string, string | null> = {}
         for (const cv of item.column_values ?? []) {
           const f = ITEM_COL[cv.id]; if (f) itemCols[f] = cv.text || null
@@ -330,6 +333,7 @@ router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Respon
         if (!ins) continue
 
         for (const sub of item.subitems ?? []) {
+          seenSubitemIds.push(sub.id)
           const subCols: Record<string, unknown> = {}
           for (const cv of sub.column_values ?? []) {
             const f = SUB_COL[cv.id]
@@ -344,7 +348,26 @@ router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Respon
       }
     } while (cursor)
 
-    return res.json({ ok: true, count })
+    // Delete items/subitems that no longer exist in Monday
+    const { data: dbItems } = await supabase
+      .from('monday_items').select('id, monday_item_id').eq('wave_id', wave.id)
+    const orphanItems = (dbItems ?? []).filter(r => !seenItemIds.includes(r.monday_item_id))
+    for (const orphan of orphanItems) {
+      await supabase.from('monday_subitems').delete().eq('item_id', orphan.id)
+      await supabase.from('monday_items').delete().eq('id', orphan.id)
+    }
+
+    if (seenSubitemIds.length > 0) {
+      const { data: dbSubs } = await supabase
+        .from('monday_subitems').select('id, monday_subitem_id')
+        .in('item_id', (dbItems ?? []).filter(r => seenItemIds.includes(r.monday_item_id)).map(r => r.id))
+      const orphanSubs = (dbSubs ?? []).filter(r => !seenSubitemIds.includes(r.monday_subitem_id))
+      for (const orphan of orphanSubs) {
+        await supabase.from('monday_subitems').delete().eq('id', orphan.id)
+      }
+    }
+
+    return res.json({ ok: true, count, deleted: orphanItems.length })
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
