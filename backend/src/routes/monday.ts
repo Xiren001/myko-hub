@@ -122,7 +122,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         .update({ [field]: value, updated_at: new Date().toISOString() })
         .eq(idCol, pulseId)
 
-    } else if (event.type === 'update_name') {
+    } else if (event.type === 'update_name' || event.type === 'change_name') {
       const name = typeof event.value === 'string' ? event.value : (event.value as any)?.name
       if (name) {
         const table = isSub ? 'monday_subitems' : 'monday_items'
@@ -132,7 +132,37 @@ router.post('/webhook', async (req: Request, res: Response) => {
           .eq(idCol, pulseId)
       }
 
+    } else if (event.type === 'change_subitem_name') {
+      const name = typeof event.value === 'string' ? event.value : (event.value as any)?.name
+      if (name) {
+        await supabase.from('monday_subitems')
+          .update({ name, updated_at: new Date().toISOString() })
+          .eq('monday_subitem_id', pulseId)
+      }
+
+    } else if (event.type === 'create_subitem') {
+      const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name column_values { id text } parent_item { id } } }`)
+      const sub = data?.data?.items?.[0]
+      if (sub?.parent_item?.id) {
+        const { data: parentItem } = await supabase.from('monday_items')
+          .select('id').eq('monday_item_id', String(sub.parent_item.id)).single()
+        if (parentItem) {
+          const subCols: Record<string, unknown> = {}
+          for (const cv of sub.column_values ?? []) {
+            const f = SUB_COL[cv.id]
+            if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
+          }
+          await supabase.from('monday_subitems').upsert({
+            item_id: parentItem.id, monday_subitem_id: sub.id, name: sub.name, ...subCols,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'monday_subitem_id' })
+        }
+      }
+
     } else if ((event.type === 'create_pulse' || event.type === 'create_item') && !isSub && boardId in PARENT_BOARD_MAP) {
+      await fetchAndUpsertItem(pulseId, boardId)
+
+    } else if (event.type === 'item_restored' && boardId in PARENT_BOARD_MAP) {
       await fetchAndUpsertItem(pulseId, boardId)
 
     } else if (event.type === 'delete_pulse' || event.type === 'item_deleted' || event.type === 'item_archived' || event.type === 'subitem_deleted' || event.type === 'subitem_archived') {
@@ -460,6 +490,27 @@ router.post('/register-item-move-hooks', authenticate, requireAdmin, async (_req
     results[boardId] = {
       create_item: created?.data?.create_webhook ?? created?.errors,
       item_deleted: deleted?.data?.create_webhook ?? deleted?.errors,
+    }
+  }
+
+  return res.json({ ok: true, results })
+})
+
+// ── POST /api/monday/register-crud-hooks ─────────────────────────────────
+// Registers create/edit/delete webhooks on all parent boards. Admin only.
+router.post('/register-crud-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+
+  const events = ['create_subitem', 'change_name', 'change_subitem_name', 'subitem_deleted', 'item_restored']
+  const results: Record<string, unknown> = {}
+
+  for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
+    results[boardId] = {}
+    for (const event of events) {
+      const resp = await mondayGql(`
+        mutation { create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: ${event}) { id board_id } }
+      `)
+      ;(results[boardId] as any)[event] = resp?.data?.create_webhook ?? resp?.errors
     }
   }
 
