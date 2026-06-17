@@ -300,6 +300,27 @@ async function fetchAndUpsertItem(itemId: string, boardId: string): Promise<void
   }
 }
 
+// ── PATCH /api/monday/items/:itemId/timestamps ───────────────────────────
+// Manually edit LP phase timestamps. Authenticated (any role).
+const ALLOWED_TS_FIELDS = new Set([
+  'lp_building_at', 'lp_ready_at', 'lp_proofread_at',
+  'lp_ready_to_launch_at', 'lp_launched_at',
+])
+
+router.patch('/items/:itemId/timestamps', authenticate, async (req: AuthRequest, res: Response) => {
+  const { itemId } = req.params
+  const updates: Record<string, string | null> = {}
+  for (const [key, val] of Object.entries(req.body)) {
+    if (ALLOWED_TS_FIELDS.has(key)) updates[key] = (val as string | null) || null
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields' })
+  const { error } = await supabase.from('monday_items')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', itemId)
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
+})
+
 // ── POST /api/monday/sync/:boardId ────────────────────────────────────────
 // Syncs a single wave board. Authenticated (any role).
 router.post('/sync/:boardId', authenticate, async (req: AuthRequest, res: Response) => {
