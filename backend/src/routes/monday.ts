@@ -59,6 +59,18 @@ const SUB_COL: Record<string, string> = {
 
 const BOOL_FIELDS = new Set(['concluded', 'listed_for_proofread', 'meta', 'tiktok', 'youtube', 'pinterest', 'google_shopping', 'google_search'])
 
+// Maps a landing_page_status label to the phase timestamp column it should stamp.
+// Order matters: check "ready to launch" before bare "ready".
+function lpPhaseField(status: string): string | null {
+  const s = status.toLowerCase().trim()
+  if (s.includes('building'))        return 'lp_building_at'
+  if (s.includes('ready to launch')) return 'lp_ready_to_launch_at'
+  if (s === 'ready')                 return 'lp_ready_at'
+  if (s.includes('proofread'))       return 'lp_proofread_at'
+  if (s.includes('launched'))        return 'lp_launched_at'
+  return null
+}
+
 function parseWebhookValue(raw: unknown, field: string): unknown {
   if (raw === null || raw === undefined) return null
   let val: unknown = raw
@@ -118,8 +130,16 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const table = isSub ? 'monday_subitems' : 'monday_items'
       const idCol = isSub ? 'monday_subitem_id' : 'monday_item_id'
 
+      const updatePayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
+
+      // Stamp the phase timestamp when landing_page_status advances on a parent item
+      if (field === 'landing_page_status' && !isSub && typeof value === 'string' && value) {
+        const tsField = lpPhaseField(value)
+        if (tsField) updatePayload[tsField] = new Date().toISOString()
+      }
+
       await supabase.from(table)
-        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq(idCol, pulseId)
 
     } else if (event.type === 'update_name' || event.type === 'change_name') {
