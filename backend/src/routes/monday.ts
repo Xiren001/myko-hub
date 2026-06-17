@@ -140,10 +140,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
       const updatePayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
 
-      // Stamp the phase timestamp when landing_page_status advances on a parent item
-      if (field === 'landing_page_status' && !isSub && typeof value === 'string' && value) {
-        const tsField = lpPhaseField(value)
-        if (tsField) updatePayload[tsField] = new Date().toISOString()
+      // Stamp phase timestamp for landing_page_status (items) or website_status (subitems)
+      if (typeof value === 'string' && value) {
+        const isTracked = (!isSub && field === 'landing_page_status') || (isSub && field === 'website_status')
+        if (isTracked) {
+          const tsField = lpPhaseField(value)
+          if (tsField) updatePayload[tsField] = new Date().toISOString()
+        }
       }
 
       await supabase.from(table)
@@ -543,8 +546,8 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
   const allBoards = [
-    '5029159813', '5029160081', '5029160187', '5029160246', '5029160273', '5029160365', '5029161574',
-    '5029159814', '5029160083', '5029160188', '5029160247', '5029160274', '5029160368', '5029161575',
+    ...Object.keys(PARENT_BOARD_MAP),
+    ...Object.keys(SUBITEM_BOARD_MAP),
   ]
 
   const results: Record<string, unknown> = {}
