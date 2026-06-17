@@ -117,8 +117,16 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const field = SUB_COL[event.columnId]
       if (!field) return res.json({ ok: true })
       const value = parseWebhookValue(event.value, field)
+      const subPayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
+
+      // Stamp phase timestamp when website_status advances on a subitem
+      if (field === 'website_status' && typeof value === 'string' && value) {
+        const tsField = lpPhaseField(value)
+        if (tsField) subPayload[tsField] = new Date().toISOString()
+      }
+
       await supabase.from('monday_subitems')
-        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .update(subPayload)
         .eq('monday_subitem_id', pulseId)
 
     } else if (event.type === 'update_column_value') {
@@ -317,6 +325,22 @@ router.patch('/items/:itemId/timestamps', authenticate, async (req: AuthRequest,
   const { error } = await supabase.from('monday_items')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', itemId)
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
+})
+
+// ── PATCH /api/monday/subitems/:subitemId/timestamps ─────────────────────
+// Manually edit LP phase timestamps on a subitem. Authenticated (any role).
+router.patch('/subitems/:subitemId/timestamps', authenticate, async (req: AuthRequest, res: Response) => {
+  const { subitemId } = req.params
+  const updates: Record<string, string | null> = {}
+  for (const [key, val] of Object.entries(req.body)) {
+    if (ALLOWED_TS_FIELDS.has(key)) updates[key] = (val as string | null) || null
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields' })
+  const { error } = await supabase.from('monday_subitems')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', subitemId)
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ ok: true })
 })
