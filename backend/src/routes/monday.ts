@@ -64,10 +64,10 @@ const BOOL_FIELDS = new Set(['concluded', 'listed_for_proofread', 'meta', 'tikto
 function lpPhaseField(status: string): string | null {
   const s = status.toLowerCase().trim()
   if (s.includes('building'))        return 'lp_building_at'
-  if (s.includes('ready to launch')) return 'lp_ready_to_launch_at'
-  if (s.includes('ready'))           return 'lp_ready_at'
+  if (s === 'ready to launch')       return 'lp_ready_to_launch_at'
+  if (s === 'ready')                 return 'lp_ready_at'
   if (s.includes('proofread'))       return 'lp_proofread_at'
-  if (s.includes('launched'))        return 'lp_launched_at'
+  if (s === 'launched')              return 'lp_launched_at'
   return null
 }
 
