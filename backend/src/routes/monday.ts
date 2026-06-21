@@ -95,6 +95,34 @@ async function mondayGql(query: string): Promise<any> {
   return res.json()
 }
 
+// When a subitem enters "Proofread" status, auto-create a proof_products entry
+// so it appears in the Proofreading page. No-op if one already exists.
+async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<void> {
+  const { data: sub } = await supabase
+    .from('monday_subitems')
+    .select('product_name, name, shopify_pdp_link')
+    .eq('monday_subitem_id', mondaySubitemId)
+    .maybeSingle()
+  if (!sub) return
+
+  const productName = (sub.product_name ?? sub.name) as string | null
+  if (!productName) return
+
+  const { data: existing } = await supabase
+    .from('proof_products')
+    .select('id')
+    .ilike('product_name', productName)
+    .maybeSingle()
+  if (existing) return
+
+  await supabase.from('proof_products').insert({
+    product_name: productName,
+    pdp_url:      (sub.shopify_pdp_link ?? null) as string | null,
+    done:         false,
+    month_year:   new Date().toISOString().slice(0, 7),
+  })
+}
+
 // ── Public webhook (no auth — Monday.com calls this) ──────────────────────
 router.post('/webhook', async (req: Request, res: Response) => {
   const body = req.body as any
@@ -129,6 +157,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
         .update(subPayload)
         .eq('monday_subitem_id', pulseId)
 
+      if (field === 'website_status' && typeof value === 'string' && value.toLowerCase().includes('proofread')) {
+        await upsertProofProductFromSubitem(pulseId)
+      }
+
     } else if (event.type === 'update_column_value') {
       const colMap = isSub ? SUB_COL : ITEM_COL
       const field  = colMap[event.columnId]
@@ -152,6 +184,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
       await supabase.from(table)
         .update(updatePayload)
         .eq(idCol, pulseId)
+
+      if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase().includes('proofread')) {
+        await upsertProofProductFromSubitem(pulseId)
+      }
 
     } else if (event.type === 'update_name' || event.type === 'change_name') {
       const name = typeof event.value === 'string' ? event.value : (event.value as any)?.name
