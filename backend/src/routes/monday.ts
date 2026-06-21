@@ -100,24 +100,32 @@ async function mondayGql(query: string): Promise<any> {
 async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<void> {
   const { data: sub } = await supabase
     .from('monday_subitems')
-    .select('product_name, name, shopify_pdp_link')
+    .select('product_name, name, page_link, drive_link')
     .eq('monday_subitem_id', mondaySubitemId)
     .maybeSingle()
   if (!sub) return
 
-  const productName = (sub.product_name ?? sub.name) as string | null
+  // subitem name is the language variant — skip English
+  const lang = (sub.name as string | null)?.trim() ?? null
+  if (!lang) return
+  if (lang.toLowerCase() === 'english' || lang.toUpperCase() === 'EN') return
+
+  const productName = (sub.product_name ?? null) as string | null
   if (!productName) return
 
   const { data: existing } = await supabase
     .from('proof_products')
     .select('id')
     .ilike('product_name', productName)
+    .eq('language', lang)
     .maybeSingle()
   if (existing) return
 
   await supabase.from('proof_products').insert({
     product_name: productName,
-    pdp_url:      (sub.shopify_pdp_link ?? null) as string | null,
+    language:     lang,
+    pdp_url:      (sub.page_link ?? null) as string | null,
+    drive_folder: (sub.drive_link ?? null) as string | null,
     done:         false,
     month_year:   new Date().toISOString().slice(0, 7),
   })
