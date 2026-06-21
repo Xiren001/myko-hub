@@ -105,10 +105,11 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
     .maybeSingle()
   if (!sub) return
 
-  // subitem name is the language variant — skip English
-  const lang = (sub.name as string | null)?.trim() ?? null
-  if (!lang) return
-  if (lang.toLowerCase() === 'english' || lang.toUpperCase() === 'EN') return
+  // skip English, EN, and ZA variants
+  const variant = (sub.name as string | null)?.trim() ?? ''
+  const variantUpper = variant.toUpperCase()
+  if (!variant) return
+  if (variantUpper === 'ENGLISH' || variantUpper === 'EN' || variantUpper === 'ZA') return
 
   const productName = (sub.product_name ?? null) as string | null
   if (!productName) return
@@ -117,13 +118,11 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
     .from('proof_products')
     .select('id')
     .ilike('product_name', productName)
-    .eq('language', lang)
     .maybeSingle()
   if (existing) return
 
   await supabase.from('proof_products').insert({
     product_name: productName,
-    language:     lang,
     pdp_url:      (sub.page_link ?? null) as string | null,
     drive_folder: (sub.drive_link ?? null) as string | null,
     done:         false,
