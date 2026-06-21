@@ -157,7 +157,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         .update(subPayload)
         .eq('monday_subitem_id', pulseId)
 
-      if (field === 'website_status' && typeof value === 'string' && value.toLowerCase().includes('proofread')) {
+      if (field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
       }
 
@@ -185,7 +185,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         .update(updatePayload)
         .eq(idCol, pulseId)
 
-      if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase().includes('proofread')) {
+      if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
       }
 
