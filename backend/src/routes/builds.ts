@@ -71,29 +71,55 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
   const ms = month && typeof month === 'string' ? monthStart(month) : undefined
   const me = month && typeof month === 'string' ? monthEnd(month) : undefined
 
-  // ── 1. Builds in proofread ──────────────────────────────────────────────
-  // Active builds (proof_end IS NULL) are always included.
-  // Done builds are included when their proof_end falls in the selected month.
-  let bq = supabase
-    .from('builds')
-    .select('*')
-    .not('into_proofread', 'is', null)
-    .neq('language', 'EN')
-
-  if (req.userLang) bq = bq.eq('language', req.userLang)
+  // ── 1. Waves subitems in proofread ────────────────────────────────────
+  // Active (website_status contains 'proofread') always included.
+  // Done items (lp_proofread_at set, status moved on) included when lp_proofread_at is in the selected month.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let wq = (supabase as any)
+    .from('monday_subitems')
+    .select(`
+      id, name, product_name, website_status, created_at,
+      lp_proofread_at, lp_ready_to_launch_at,
+      monday_items!inner(
+        name,
+        monday_waves!inner(wave_number)
+      )
+    `)
+    .not('lp_proofread_at', 'is', null)
 
   if (ms && me) {
-    bq = bq.or(`proof_end.is.null,and(proof_end.gte.${ms},proof_end.lte.${me})`)
+    wq = wq.or(`website_status.ilike.%proofread%,and(lp_proofread_at.gte.${ms},lp_proofread_at.lte.${me})`)
   } else {
-    bq = bq.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
+    wq = wq.ilike('website_status', '%proofread%')
   }
 
-  const { data: buildsData, error } = await bq
-  if (error) return res.status(500).json({ error: error.message })
-  const enrichedBuilds = (buildsData ?? []).map(enrichBuild)
+  const { data: waveData, error: waveError } = await wq
+  if (waveError) return res.status(500).json({ error: waveError.message })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const waveItems = (waveData ?? []).map((sub: any) => {
+    const isDone = !sub.website_status?.toLowerCase().includes('proofread')
+    return {
+      id:             sub.id as string,
+      build_id:       null as string | null,
+      product_name:   (sub.product_name ?? sub.name) as string,
+      monday_url:     null as string | null,
+      language:       null as string | null,
+      proofreader:    null as string | null,
+      type:           'wave' as string,
+      week_number:    null as number | null,
+      month_year:     null as string | null,
+      into_proofread: sub.lp_proofread_at as string | null,
+      proof_end:      (isDone ? (sub.lp_ready_to_launch_at ?? null) : null) as string | null,
+      proof_days:     null as number | null,
+      outcome:        null as string | null,
+      done:           isDone as boolean,
+      created_at:     sub.created_at as string | null,
+      source:         'wave' as const,
+    }
+  })
 
   // ── 2. Proof products added directly ──────────────────────────────────
-  // Active (done=false) always; done ones included when into_proofread is in the month.
   let ppq = supabase
     .from('proof_products')
     .select('*')
@@ -110,53 +136,26 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
 
   const { data: ppData } = await ppq
 
-  // Deduplicate: skip proof_products already covered by a build (product_name + language)
-  const buildKeys = new Set(
-    enrichedBuilds.map(b => `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`)
-  )
-
-  const orphans = (ppData ?? [])
-    .filter(pp => !buildKeys.has(`${pp.product_name.toLowerCase()}|${pp.language ?? ''}`))
-    .map(pp => ({
-      id: `pp-${pp.id}`,
-      build_id:       null as string | null,
-      product_name:   pp.product_name as string,
-      monday_url:     (pp.monday_url ?? null) as string | null,
-      language:       pp.language as string | null,
-      proofreader:    pp.proofreader as string | null,
-      type:           (pp.type ?? 'jewelry') as string,
-      week_number:    (pp.week_number ?? null) as number | null,
-      month_year:     (pp.month_year ?? null) as string | null,
-      into_proofread: (pp.into_proofread ?? null) as string | null,
-      proof_end:      null as string | null,
-      proof_days:     null as number | null,
-      outcome:        null as string | null,
-      done:           pp.done as boolean,
-      created_at:     (pp.created_at ?? null) as string | null,
-      source:         'proof_product' as const,
-    }))
-
-  // ── 3. Normalise build rows ────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const buildItems = enrichedBuilds.map((b: any) => ({
-    id:             b.id as string,
-    build_id:       b.id as string,
-    product_name:   b.product_name as string,
-    monday_url:     (b.monday_url ?? null) as string | null,
-    language:       b.language as string | null,
-    proofreader:    b.proofreader as string | null,
-    type:           b.type as string | null,
-    week_number:    b.week_number as number | null,
-    month_year:     b.month_year as string | null,
-    into_proofread: b.into_proofread as string | null,
-    proof_end:      b.proof_end as string | null,
-    proof_days:     b.proof_days as number | null,
-    outcome:        b.outcome as string | null,
-    done:           (b.proof_end !== null) as boolean,
-    source:         'build' as const,
+  const directItems = (ppData ?? []).map(pp => ({
+    id:             `pp-${pp.id}`,
+    build_id:       null as string | null,
+    product_name:   pp.product_name as string,
+    monday_url:     (pp.monday_url ?? null) as string | null,
+    language:       pp.language as string | null,
+    proofreader:    pp.proofreader as string | null,
+    type:           (pp.type ?? 'jewelry') as string,
+    week_number:    (pp.week_number ?? null) as number | null,
+    month_year:     (pp.month_year ?? null) as string | null,
+    into_proofread: (pp.into_proofread ?? null) as string | null,
+    proof_end:      null as string | null,
+    proof_days:     null as number | null,
+    outcome:        null as string | null,
+    done:           pp.done as boolean,
+    created_at:     (pp.created_at ?? null) as string | null,
+    source:         'proof_product' as const,
   }))
 
-  res.json([...buildItems, ...orphans])
+  res.json([...waveItems, ...directItems])
 })
 
 // Payment overview — same data source as proofread-queue, with payment fields added
