@@ -106,10 +106,9 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
   if (!sub) return
 
   // skip English, EN, and ZA variants
-  const variant = (sub.name as string | null)?.trim() ?? ''
-  const variantUpper = variant.toUpperCase()
+  const variant = (sub.name as string | null)?.trim().toLowerCase() ?? ''
   if (!variant) return
-  if (variantUpper === 'ENGLISH' || variantUpper === 'EN' || variantUpper === 'ZA') return
+  if (variant === 'english' || variant === 'en' || variant === 'za') return
 
   const productName = (sub.product_name ?? null) as string | null
   if (!productName) return
