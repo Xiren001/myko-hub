@@ -671,4 +671,176 @@ router.post('/register-crud-hooks', authenticate, requireAdmin, async (_req: Aut
   return res.json({ ok: true, results })
 })
 
+// ── GET /api/monday/waves-weekly-report ──────────────────────────────────
+router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: Response) => {
+  const { weekStart: weekStartParam } = req.query
+
+  // Compute week start (Monday) and end (Sunday)
+  let ws: Date
+  if (weekStartParam && typeof weekStartParam === 'string') {
+    ws = new Date(weekStartParam + 'T00:00:00')
+  } else {
+    ws = new Date()
+    const day = ws.getDay()
+    ws.setDate(ws.getDate() + (day === 0 ? -6 : 1 - day))
+    ws.setHours(0, 0, 0, 0)
+  }
+  const we = new Date(ws)
+  we.setDate(we.getDate() + 6)
+  we.setHours(23, 59, 59, 999)
+  const wsISO = ws.toISOString()
+  const weISO = we.toISOString()
+
+  function daysBetween(from: string | null | undefined, to: string | null | undefined): number | null {
+    if (!from || !to) return null
+    const d = (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000
+    return d < 0 ? null : d
+  }
+
+  function avgOf(values: (number | null)[]): number | null {
+    const valid = values.filter((v): v is number => v !== null && isFinite(v))
+    if (!valid.length) return null
+    return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length * 10) / 10
+  }
+
+  const { data: subitems, error } = await (supabase as any)
+    .from('monday_subitems')
+    .select(`
+      id, name, website_status, concluded,
+      lp_proofread_at, lp_ready_to_launch_at, lp_launched_at,
+      monday_items!inner(
+        id, name, created_at,
+        monday_waves!inner(wave_number, name)
+      )
+    `)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const allSubs: any[] = subitems ?? []
+
+  // Group subitems by item
+  const itemMap = new Map<string, { item: any; subitems: any[] }>()
+  for (const sub of allSubs) {
+    const mi = sub.monday_items
+    if (!mi) continue
+    const itemId = mi.id
+    if (!itemMap.has(itemId)) itemMap.set(itemId, { item: mi, subitems: [] })
+    itemMap.get(itemId)!.subitems.push(sub)
+  }
+  const items = Array.from(itemMap.values())
+
+  const getLang = (subs: any[], lang: string) =>
+    subs.find((s: any) => s.name?.trim().toLowerCase() === lang.toLowerCase())
+
+  // 1. Products tested (EN + ES + DE all launched)
+  const productsTestedFullSet = items.filter(({ subitems: subs }) =>
+    ['en', 'es', 'de'].every(l => getLang(subs, l)?.lp_launched_at)
+  ).length
+
+  // 2. Avg days from spot (item.created_at) to EN launched
+  const avgSpotToEnLaunch = avgOf(items.map(({ item, subitems: subs }) => {
+    const en = getLang(subs, 'en')
+    return daysBetween(item.created_at, en?.lp_launched_at)
+  }))
+
+  // 3. Avg days in Proofread phase
+  const avgDaysProofread = avgOf(allSubs.map((s: any) => {
+    if (!s.lp_proofread_at) return null
+    const end = s.lp_ready_to_launch_at ?? new Date().toISOString()
+    return daysBetween(s.lp_proofread_at, end)
+  }))
+
+  // 4. Avg days from EN launched to ES + DE launched
+  const avgEnToOthersLaunch = avgOf(items.map(({ subitems: subs }) => {
+    const en = getLang(subs, 'en')
+    const es = getLang(subs, 'es')
+    const de = getLang(subs, 'de')
+    if (!en?.lp_launched_at || !es?.lp_launched_at || !de?.lp_launched_at) return null
+    const lastOther = Math.max(
+      new Date(es.lp_launched_at).getTime(),
+      new Date(de.lp_launched_at).getTime(),
+    )
+    const d = (lastOther - new Date(en.lp_launched_at).getTime()) / 86_400_000
+    return d < 0 ? null : d
+  }))
+
+  // 5. Items waiting in Proofread queue (Wave 1)
+  const wave1ProofreadQueue = allSubs.filter((s: any) =>
+    s.monday_items?.monday_waves?.wave_number === 1 &&
+    s.website_status?.toLowerCase() === 'waiting for proofread'
+  ).length
+
+  // 6. Tested products that made it to Wave 2+ (%)
+  const testedInWave1 = items.filter(({ item, subitems: subs }) =>
+    item.monday_waves?.wave_number === 1 && subs.some((s: any) => s.lp_launched_at)
+  ).length
+  const testedInWave2Plus = items.filter(({ item, subitems: subs }) =>
+    (item.monday_waves?.wave_number ?? 0) >= 2 && subs.some((s: any) => s.lp_launched_at)
+  ).length
+  const totalTestedWaves = testedInWave1 + testedInWave2Plus
+  const pctTestedToWave2 = totalTestedWaves > 0
+    ? Math.round(testedInWave2Plus / totalTestedWaves * 100)
+    : null
+
+  // 7. Avg days: wave arrival → all 3 campaigns done
+  const avgDaysWaveToAllDone = avgOf(items.map(({ item, subitems: subs }) => {
+    const en = getLang(subs, 'en')
+    const es = getLang(subs, 'es')
+    const de = getLang(subs, 'de')
+    if (!en?.lp_launched_at || !es?.lp_launched_at || !de?.lp_launched_at) return null
+    const lastLaunch = Math.max(
+      new Date(en.lp_launched_at).getTime(),
+      new Date(es.lp_launched_at).getTime(),
+      new Date(de.lp_launched_at).getTime(),
+    )
+    return daysBetween(item.created_at, new Date(lastLaunch).toISOString())
+  }))
+
+  // 8. New languages launched this week
+  const newLangsThisWeek = allSubs.filter((s: any) =>
+    s.lp_launched_at && s.lp_launched_at >= wsISO && s.lp_launched_at <= weISO
+  ).length
+
+  // 9. Avg languages per active product
+  const activeLangsPerItem = items
+    .map(({ subitems: subs }) => subs.filter((s: any) => s.lp_launched_at && !s.concluded).length)
+    .filter(c => c > 0)
+  const avgLangsPerActive = avgOf(activeLangsPerItem)
+
+  // 10. Deepest winner (most active languages)
+  let deepestWinner: { name: string; count: number } | null = null
+  for (const { item, subitems: subs } of items) {
+    const count = subs.filter((s: any) => s.lp_launched_at && !s.concluded).length
+    if (count > 0 && (!deepestWinner || count > deepestWinner.count)) {
+      deepestWinner = { name: item.name, count }
+    }
+  }
+
+  // 12–14. Winners by size (active = launched + not concluded)
+  const activeCountPerItem = items.map(({ subitems: subs }) =>
+    subs.filter((s: any) => s.lp_launched_at && !s.concluded).length
+  )
+  const smallWinners  = activeCountPerItem.filter(c => c >= 1).length
+  const mediumWinners = activeCountPerItem.filter(c => c >= 8).length
+  const bigWinners    = activeCountPerItem.filter(c => c >= 16).length
+
+  return res.json({
+    weekStart: wsISO,
+    weekEnd: weISO,
+    productsTestedFullSet,
+    avgSpotToEnLaunch,
+    avgDaysProofread,
+    avgEnToOthersLaunch,
+    wave1ProofreadQueue,
+    pctTestedToWave2,
+    avgDaysWaveToAllDone,
+    newLangsThisWeek,
+    avgLangsPerActive,
+    deepestWinner,
+    smallWinners,
+    mediumWinners,
+    bigWinners,
+  })
+})
+
 export default router
