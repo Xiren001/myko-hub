@@ -755,12 +755,19 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(wave1EnPhase1Days.reduce((a, b) => a + b, 0) / wave1EnPhase1Days.length * 10) / 10
     : null
 
-  // 3. Avg days in Proofread phase
-  const avgDaysProofread = avgOf(allSubs.map((s: any) => {
-    if (!s.lp_proofread_at) return null
-    const end = s.lp_ready_to_launch_at ?? new Date().toISOString()
-    return daysBetween(s.lp_proofread_at, end)
-  }))
+  // 3. Avg proofread phase days: waves 1-7, non-EN/English subitems only
+  const proofreadDays = allSubs
+    .filter((s: any) => {
+      const waveNum = s.monday_items?.monday_waves?.wave_number
+      if (waveNum === undefined || waveNum === 0) return false
+      const n = s.name?.trim().toLowerCase()
+      return n !== 'en' && n !== 'english'
+    })
+    .map((s: any) => daysBetween(s.lp_proofread_at, s.lp_ready_to_launch_at))
+    .filter((d): d is number => d !== null)
+  const avgDaysProofread = proofreadDays.length > 0
+    ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
+    : null
 
   // 4. Avg days from EN launched to ES + DE launched
   const avgEnToOthersLaunch = avgOf(items.map(({ subitems: subs }) => {
