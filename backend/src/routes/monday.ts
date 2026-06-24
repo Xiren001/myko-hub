@@ -802,16 +802,25 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   // Wave 1 = total active − wave 2-7
   const wave1ProofreadQueue = totalActiveProofreadQueue - wave2to7ProofreadQueue
 
-  // 6. Tested products that made it to Wave 2+ (%)
-  const testedInWave1 = items.filter(({ item, subitems: subs }) =>
-    item.monday_waves?.wave_number === 1 && subs.some((s: any) => s.lp_launched_at)
-  ).length
-  const testedInWave2Plus = items.filter(({ item, subitems: subs }) =>
-    (item.monday_waves?.wave_number ?? 0) >= 2 && subs.some((s: any) => s.lp_launched_at)
-  ).length
-  const totalTestedWaves = testedInWave1 + testedInWave2Plus
-  const pctTestedToWave2 = totalTestedWaves > 0
-    ? Math.round(testedInWave2Plus / totalTestedWaves * 100)
+  // 6. Wave 1 → Wave 2 progression: how many Wave 1 products also appear in Wave 2 (by name)
+  const { data: waves12 } = await supabase
+    .from('monday_waves')
+    .select('id, wave_number')
+    .in('wave_number', [1, 2])
+  const wave1Id = (waves12 ?? []).find((w: any) => w.wave_number === 1)?.id
+  const wave2Id = (waves12 ?? []).find((w: any) => w.wave_number === 2)?.id
+  const [w1Res, w2Res] = await Promise.all([
+    wave1Id ? supabase.from('monday_items').select('name').eq('wave_id', wave1Id) : Promise.resolve({ data: [] }),
+    wave2Id ? supabase.from('monday_items').select('name').eq('wave_id', wave2Id) : Promise.resolve({ data: [] }),
+  ])
+  const wave1Names = ((w1Res as any).data ?? []).map((i: any) => i.name?.trim().toLowerCase()).filter(Boolean)
+  const wave2NamesSet = new Set(
+    ((w2Res as any).data ?? []).map((i: any) => i.name?.trim().toLowerCase()).filter(Boolean)
+  )
+  const wave1Total = wave1Names.length
+  const wave1ToWave2Count = wave1Names.filter((n: string) => wave2NamesSet.has(n)).length
+  const pctWave1ToWave2 = wave1Total > 0
+    ? Math.round(wave1ToWave2Count / wave1Total * 100)
     : null
 
   // 7. Avg days: wave arrival → all 3 campaigns done
@@ -865,7 +874,9 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgEnToOthersLaunch,
     wave1ProofreadQueue,
     wave2to7ProofreadQueue,
-    pctTestedToWave2,
+    wave1Total,
+    wave1ToWave2Count,
+    pctWave1ToWave2,
     avgDaysWaveToAllDone,
     newLangsThisWeek,
     avgLangsPerActive,
