@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
 import { sendProofNotificationsForLanguage } from '../jobs/proofNotifier'
+import { enqueueNotification } from '../jobs/notificationScheduler'
 
 const router = Router()
 
@@ -72,6 +73,29 @@ router.put('/delay', authenticate, requireAdmin, async (req: AuthRequest, res: R
     .upsert({ key: 'delay_minutes', value: String(delayMinutes) }, { onConflict: 'key' })
 
   if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
+})
+
+// PATCH /api/proof-notifications/products/:id/language
+// Set language on a proof_product and auto-enqueue notification
+router.patch('/products/:id/language', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params
+  const { language } = req.body
+  if (!language || typeof language !== 'string') {
+    return res.status(400).json({ error: 'language required' })
+  }
+
+  const { error } = await supabase
+    .from('proof_products')
+    .update({ language: language.toUpperCase() })
+    .eq('id', id)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  enqueueNotification(language.toUpperCase()).catch(err =>
+    console.error('[proof-notify] enqueue error:', err)
+  )
+
   return res.json({ ok: true })
 })
 

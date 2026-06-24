@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireManagement, requireCorrectionWrite, AuthRequest } from '../middleware/auth'
+import { enqueueNotification } from '../jobs/notificationScheduler'
 
 const router = Router()
 
@@ -111,6 +112,13 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // Auto-notify when language is first assigned
+  if (updateData.language && typeof updateData.language === 'string' && data.notified_at === null) {
+    enqueueNotification(updateData.language as string).catch(err =>
+      console.error('[proof-notify] enqueue error:', err)
+    )
+  }
 
   // Sync to linked jewelry build when done actually changes
   const doneChanged = 'done' in updateData && (
