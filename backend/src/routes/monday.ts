@@ -769,19 +769,25 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
     : null
 
-  // 4. Avg days from EN launched to ES + DE launched
-  const avgEnToOthersLaunch = avgOf(items.map(({ subitems: subs }) => {
-    const en = getLang(subs, 'en')
-    const es = getLang(subs, 'es')
-    const de = getLang(subs, 'de')
-    if (!en?.lp_launched_at || !es?.lp_launched_at || !de?.lp_launched_at) return null
-    const lastOther = Math.max(
-      new Date(es.lp_launched_at).getTime(),
-      new Date(de.lp_launched_at).getTime(),
-    )
-    const d = (lastOther - new Date(en.lp_launched_at).getTime()) / 86_400_000
-    return d < 0 ? null : d
-  }))
+  // 4. Avg days from EN Phase 1 done to last non-EN Phase 1 done (Wave 1)
+  const enToOthersDays = items
+    .filter(({ item }) => item.monday_waves?.wave_number === 1)
+    .map(({ subitems: subs }) => {
+      const en = getEnSub(subs)
+      if (!en?.lp_ready_at) return null
+      const nonEnDates = subs
+        .filter((s: any) => { const n = s.name?.trim().toLowerCase(); return n !== 'en' && n !== 'english' })
+        .map((s: any) => s.lp_ready_at)
+        .filter(Boolean)
+        .map((d: string) => new Date(d).getTime())
+      if (!nonEnDates.length) return null
+      const diff = (Math.max(...nonEnDates) - new Date(en.lp_ready_at).getTime()) / 86_400_000
+      return diff < 0 ? null : diff
+    })
+    .filter((d): d is number => d !== null)
+  const avgEnToOthersLaunch = enToOthersDays.length > 0
+    ? Math.round(enToOthersDays.reduce((a, b) => a + b, 0) / enToOthersDays.length * 10) / 10
+    : null
 
   // 5. Items waiting in Proofread queue (Wave 1)
   const wave1ProofreadQueue = allSubs.filter((s: any) =>
