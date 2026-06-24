@@ -788,14 +788,11 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     s.website_status?.toLowerCase() === 'waiting for proofread'
   ).length
 
-  // item-based count: Wave 1 items whose subitems are NOT already in the queue
-  // (items with no subitems, or non-language subitems that didn't match the status)
-  const itemsAlreadyCounted = new Set(
+  // item-based count: Wave 1 items with no language subitems
+  // "in proofread" = lp_proofread_at set but lp_ready_to_launch_at not yet set
+  const itemsWithAnySub = new Set(
     allSubs
-      .filter((s: any) =>
-        s.monday_items?.monday_waves?.wave_number === 1 &&
-        s.website_status?.toLowerCase() === 'waiting for proofread'
-      )
+      .filter((s: any) => s.monday_items?.monday_waves?.wave_number === 1)
       .map((s: any) => s.monday_items?.id)
       .filter(Boolean)
   )
@@ -805,12 +802,13 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const { data: directItems } = wave1Ids.length
     ? await supabase
         .from('monday_items')
-        .select('id, landing_page_status')
+        .select('id, lp_proofread_at, lp_ready_to_launch_at')
         .in('wave_id', wave1Ids)
-        .ilike('landing_page_status', '%proofread%')
+        .not('lp_proofread_at', 'is', null)
+        .is('lp_ready_to_launch_at', null)
     : { data: [] }
   const directWave1ProofreadCount = (directItems ?? [])
-    .filter((item: any) => !itemsAlreadyCounted.has(item.id))
+    .filter((item: any) => !itemsWithAnySub.has(item.id))
     .length
 
   const wave1ProofreadQueue = subitemWave1ProofreadQueue + directWave1ProofreadCount
