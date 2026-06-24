@@ -155,7 +155,10 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     source:         'proof_product' as const,
   }))
 
-  res.json([...waveItems, ...directItems])
+  const waveNames = new Set(waveItems.map((i: { product_name: string }) => i.product_name?.toLowerCase()).filter(Boolean))
+  const dedupedDirectItems = directItems.filter((i: { product_name: string }) => !waveNames.has(i.product_name?.toLowerCase()))
+
+  res.json([...waveItems, ...dedupedDirectItems])
 })
 
 // Payment overview — same data source as proofread-queue, with payment fields added
