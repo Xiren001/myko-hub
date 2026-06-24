@@ -769,22 +769,14 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
     : null
 
-  // 4. Avg days from EN Phase 1 done to each non-EN subitem Phase 1 done (Wave 1)
-  //    each non-EN sub contributes its own data point
+  // 4. Avg Phase 1 days for non-EN subitems in Wave 1
   const enToOthersDays = items
     .filter(({ item }) => item.monday_waves?.wave_number === 1)
-    .flatMap(({ subitems: subs }) => {
-      const en = getEnSub(subs)
-      if (!en?.lp_ready_at) return []
-      return subs
-        .filter((s: any) => { const n = s.name?.trim().toLowerCase(); return n !== 'en' && n !== 'english' })
-        .map((s: any) => {
-          if (!s.lp_ready_at) return null
-          const diff = (new Date(s.lp_ready_at).getTime() - new Date(en.lp_ready_at).getTime()) / 86_400_000
-          return diff < 0 ? null : diff
-        })
-        .filter((d): d is number => d !== null)
-    })
+    .flatMap(({ subitems: subs }) => subs
+      .filter((s: any) => { const n = s.name?.trim().toLowerCase(); return n !== 'en' && n !== 'english' })
+      .map((s: any) => daysBetween(s.lp_building_at, s.lp_ready_at))
+      .filter((d): d is number => d !== null)
+    )
   const avgEnToOthersLaunch = enToOthersDays.length > 0
     ? Math.round(enToOthersDays.reduce((a, b) => a + b, 0) / enToOthersDays.length * 10) / 10
     : null
