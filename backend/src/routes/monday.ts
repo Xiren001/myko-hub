@@ -709,6 +709,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .from('monday_subitems')
     .select(`
       id, name, website_status, concluded,
+      lp_building_at, lp_ready_at,
       lp_proofread_at, lp_ready_to_launch_at, lp_launched_at,
       monday_items!inner(
         id, name, created_at, landing_page_status,
@@ -739,10 +740,10 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     item.landing_page_status?.toLowerCase() === 'launched'
   ).length
 
-  // 2. Avg days from spot (item.created_at) to EN launched
+  // 2. Avg days from spot (item.created_at) to EN Phase 1 done (lp_ready_at)
   const avgSpotToEnLaunch = avgOf(items.map(({ item, subitems: subs }) => {
     const en = getLang(subs, 'en')
-    return daysBetween(item.created_at, en?.lp_launched_at)
+    return daysBetween(item.created_at, en?.lp_ready_at)
   }))
 
   // 3. Avg days in Proofread phase
