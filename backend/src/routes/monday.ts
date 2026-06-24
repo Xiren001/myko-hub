@@ -711,7 +711,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
       id, name, website_status, concluded,
       lp_proofread_at, lp_ready_to_launch_at, lp_launched_at,
       monday_items!inner(
-        id, name, created_at,
+        id, name, created_at, landing_page_status,
         monday_waves!inner(wave_number, name)
       )
     `)
@@ -734,9 +734,9 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const getLang = (subs: any[], lang: string) =>
     subs.find((s: any) => s.name?.trim().toLowerCase() === lang.toLowerCase())
 
-  // 1. Products tested (EN + ES + DE all launched)
-  const productsTestedFullSet = items.filter(({ subitems: subs }) =>
-    ['en', 'es', 'de'].every(l => getLang(subs, l)?.lp_launched_at)
+  // 1. Products tested: items whose landing_page_status is "launched"
+  const productsTestedFullSet = items.filter(({ item }) =>
+    item.landing_page_status?.toLowerCase() === 'launched'
   ).length
 
   // 2. Avg days from spot (item.created_at) to EN launched
