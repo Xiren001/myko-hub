@@ -781,8 +781,12 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(enToOthersDays.reduce((a, b) => a + b, 0) / enToOthersDays.length * 10) / 10
     : null
 
-  // 5. Items waiting in Proofread queue (Waves 2-7)
-  const wave1ProofreadQueue = allSubs.filter((s: any) => {
+  // 5. Items waiting in Proofread queue
+  const wave1ProofreadQueue = allSubs.filter((s: any) =>
+    s.monday_items?.monday_waves?.wave_number === 1 &&
+    s.website_status?.toLowerCase() === 'waiting for proofread'
+  ).length
+  const wave2to7ProofreadQueue = allSubs.filter((s: any) => {
     const wn = s.monday_items?.monday_waves?.wave_number
     return wn >= 2 && wn <= 7 && s.website_status?.toLowerCase() === 'waiting for proofread'
   }).length
@@ -849,6 +853,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysProofread,
     avgEnToOthersLaunch,
     wave1ProofreadQueue,
+    wave2to7ProofreadQueue,
     pctTestedToWave2,
     avgDaysWaveToAllDone,
     newLangsThisWeek,
