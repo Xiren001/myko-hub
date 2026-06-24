@@ -347,14 +347,6 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
-  if (data.into_proofread && data.language && data.language !== 'EN' && data.type === 'jewelry') {
-    await syncProofProduct(
-      data.product_name, data.language, data.proofreader ?? null,
-      data.product_name, data.language,
-      null, data.proof_end ?? null,
-    )
-  }
-
   res.status(201).json(enrichBuild(data))
 })
 
@@ -377,27 +369,6 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     .single()
   if (error) return res.status(500).json({ error: error.message })
 
-  // Sync proof_products for jewelry non-EN builds in proofread
-  if (data.into_proofread && data.type === 'jewelry' && data.language && data.language !== 'EN') {
-    await syncProofProduct(
-      data.product_name as string,
-      data.language as string,
-      data.proofreader as string | null ?? null,
-      (before?.product_name ?? data.product_name) as string,
-      (before?.language ?? data.language) as string,
-      (before?.proof_end ?? null) as string | null,
-      (data.proof_end ?? null) as string | null,
-    )
-
-    // Sync monday_url to linked proof_product
-    if ('monday_url' in updateData) {
-      await supabase.from('proof_products')
-        .update({ monday_url: data.monday_url ?? null })
-        .eq('product_name', data.product_name as string)
-        .eq('language', data.language as string)
-    }
-  }
-
   res.json(enrichBuild(data))
 })
 
@@ -413,14 +384,6 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
 
   const { error } = await supabase.from('builds').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
-
-  // Cascade: remove linked proof_product for jewelry non-EN builds
-  if (build && build.type === 'jewelry' && build.language && build.language !== 'EN') {
-    await supabase.from('proof_products')
-      .delete()
-      .eq('product_name', build.product_name)
-      .eq('language', build.language)
-  }
 
   res.status(204).end()
 })
