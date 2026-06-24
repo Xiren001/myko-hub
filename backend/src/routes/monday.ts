@@ -489,6 +489,8 @@ router.get('/waves', authenticate, async (_req: AuthRequest, res: Response) => {
     .from('monday_waves')
     .select('*, monday_items(*, monday_subitems(*))')
     .order('wave_number')
+    .order('name', { foreignTable: 'monday_items', ascending: true })
+    .order('name', { foreignTable: 'monday_items.monday_subitems', ascending: true })
 
   if (error) return res.status(500).json({ error: error.message })
   return res.json(data)
