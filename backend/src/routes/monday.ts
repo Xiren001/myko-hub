@@ -782,9 +782,23 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     : null
 
   // 5. Items waiting in Proofread queue
-  const itemsWithSubIds = new Set(allSubs.map((s: any) => s.monday_items?.id).filter(Boolean))
+  // subitem-based count (items with language variants)
+  const subitemWave1ProofreadQueue = allSubs.filter((s: any) =>
+    s.monday_items?.monday_waves?.wave_number === 1 &&
+    s.website_status?.toLowerCase() === 'waiting for proofread'
+  ).length
 
-  // direct items (no subitems) in Wave 1 with landing_page_status = waiting for proofread
+  // item-based count: Wave 1 items whose subitems are NOT already in the queue
+  // (items with no subitems, or non-language subitems that didn't match the status)
+  const itemsAlreadyCounted = new Set(
+    allSubs
+      .filter((s: any) =>
+        s.monday_items?.monday_waves?.wave_number === 1 &&
+        s.website_status?.toLowerCase() === 'waiting for proofread'
+      )
+      .map((s: any) => s.monday_items?.id)
+      .filter(Boolean)
+  )
   const { data: wave1Waves } = await supabase
     .from('monday_waves').select('id').eq('wave_number', 1)
   const wave1Ids = (wave1Waves ?? []).map((w: any) => w.id)
@@ -793,16 +807,13 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
         .from('monday_items')
         .select('id, landing_page_status')
         .in('wave_id', wave1Ids)
-        .ilike('landing_page_status', 'waiting for proofread')
+        .ilike('landing_page_status', '%proofread%')
     : { data: [] }
   const directWave1ProofreadCount = (directItems ?? [])
-    .filter((item: any) => !itemsWithSubIds.has(item.id))
+    .filter((item: any) => !itemsAlreadyCounted.has(item.id))
     .length
 
-  const wave1ProofreadQueue = allSubs.filter((s: any) =>
-    s.monday_items?.monday_waves?.wave_number === 1 &&
-    s.website_status?.toLowerCase() === 'waiting for proofread'
-  ).length + directWave1ProofreadCount
+  const wave1ProofreadQueue = subitemWave1ProofreadQueue + directWave1ProofreadCount
   const wave2to7ProofreadQueue = allSubs.filter((s: any) => {
     const wn = s.monday_items?.monday_waves?.wave_number
     return wn >= 2 && wn <= 7 && s.website_status?.toLowerCase() === 'waiting for proofread'
