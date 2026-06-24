@@ -782,10 +782,21 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     : null
 
   // 5. Items waiting in Proofread queue
+  const itemsWithSubIds = new Set(allSubs.map((s: any) => s.monday_items?.id).filter(Boolean))
+
+  // direct items (no subitems) in Wave 1 with landing_page_status = waiting for proofread
+  const { data: directItems } = await supabase
+    .from('monday_items')
+    .select('id, landing_page_status, monday_waves!inner(wave_number)')
+    .ilike('landing_page_status', 'waiting for proofread')
+  const directWave1ProofreadCount = (directItems ?? []).filter((item: any) =>
+    (item.monday_waves as any)?.wave_number === 1 && !itemsWithSubIds.has(item.id)
+  ).length
+
   const wave1ProofreadQueue = allSubs.filter((s: any) =>
     s.monday_items?.monday_waves?.wave_number === 1 &&
     s.website_status?.toLowerCase() === 'waiting for proofread'
-  ).length
+  ).length + directWave1ProofreadCount
   const wave2to7ProofreadQueue = allSubs.filter((s: any) => {
     const wn = s.monday_items?.monday_waves?.wave_number
     return wn >= 2 && wn <= 7 && s.website_status?.toLowerCase() === 'waiting for proofread'
