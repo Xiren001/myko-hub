@@ -748,12 +748,11 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .filter(({ item }) => item.monday_waves?.wave_number === 1)
     .map(({ subitems: subs }) => getEnSub(subs))
     .filter(Boolean)
-  const wave1EnPhase1Sum = wave1EnSubs.reduce((sum: number, s: any) => {
-    const d = daysBetween(s.lp_building_at, s.lp_ready_at)
-    return sum + (d ?? 0)
-  }, 0)
-  const avgSpotToEnLaunch = wave1EnSubs.length > 0
-    ? Math.round(wave1EnPhase1Sum / wave1EnSubs.length * 10) / 10
+  const wave1EnPhase1Days = wave1EnSubs
+    .map((s: any) => daysBetween(s.lp_building_at, s.lp_ready_at))
+    .filter((d): d is number => d !== null)
+  const avgSpotToEnLaunch = wave1EnPhase1Days.length > 0
+    ? Math.round(wave1EnPhase1Days.reduce((a, b) => a + b, 0) / wave1EnPhase1Days.length * 10) / 10
     : null
 
   // 3. Avg days in Proofread phase
