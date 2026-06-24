@@ -781,41 +781,26 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(enToOthersDays.reduce((a, b) => a + b, 0) / enToOthersDays.length * 10) / 10
     : null
 
-  // 5. Items waiting in Proofread queue
-  // subitem-based count (items with language variants)
-  const subitemWave1ProofreadQueue = allSubs.filter((s: any) =>
-    s.monday_items?.monday_waves?.wave_number === 1 &&
-    s.website_status?.toLowerCase() === 'waiting for proofread'
-  ).length
-
-  // item-based count: Wave 1 items with no language subitems
-  // "in proofread" = lp_proofread_at set but lp_ready_to_launch_at not yet set
-  const itemsWithAnySub = new Set(
-    allSubs
-      .filter((s: any) => s.monday_items?.monday_waves?.wave_number === 1)
-      .map((s: any) => s.monday_items?.id)
-      .filter(Boolean)
+  // 5. Proofread queue — mirrors the proofread-queue page exactly
+  // Active wave subitems: lp_proofread_at set + website_status still contains 'proofread'
+  const activeWaveProofSubs = allSubs.filter((s: any) =>
+    s.lp_proofread_at && s.website_status?.toLowerCase().includes('proofread')
   )
-  const { data: wave1Waves } = await supabase
-    .from('monday_waves').select('id').eq('wave_number', 1)
-  const wave1Ids = (wave1Waves ?? []).map((w: any) => w.id)
-  const { data: directItems } = wave1Ids.length
-    ? await supabase
-        .from('monday_items')
-        .select('id, lp_proofread_at, lp_ready_to_launch_at')
-        .in('wave_id', wave1Ids)
-        .not('lp_proofread_at', 'is', null)
-        .is('lp_ready_to_launch_at', null)
-    : { data: [] }
-  const directWave1ProofreadCount = (directItems ?? [])
-    .filter((item: any) => !itemsWithAnySub.has(item.id))
-    .length
+  // Active proof_products (directly added, not done, non-EN)
+  const { data: activeProofProducts } = await supabase
+    .from('proof_products')
+    .select('id')
+    .eq('done', false)
+    .or('language.is.null,language.neq.EN')
+  const totalActiveProofreadQueue = activeWaveProofSubs.length + (activeProofProducts ?? []).length
 
-  const wave1ProofreadQueue = subitemWave1ProofreadQueue + directWave1ProofreadCount
-  const wave2to7ProofreadQueue = allSubs.filter((s: any) => {
+  const wave2to7ProofreadQueue = activeWaveProofSubs.filter((s: any) => {
     const wn = s.monday_items?.monday_waves?.wave_number
-    return wn >= 2 && wn <= 7 && s.website_status?.toLowerCase() === 'waiting for proofread'
+    return wn >= 2 && wn <= 7
   }).length
+
+  // Wave 1 = total active − wave 2-7
+  const wave1ProofreadQueue = totalActiveProofreadQueue - wave2to7ProofreadQueue
 
   // 6. Tested products that made it to Wave 2+ (%)
   const testedInWave1 = items.filter(({ item, subitems: subs }) =>
