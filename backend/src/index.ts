@@ -9,6 +9,7 @@ import mistakesRouter from './routes/mistakes'
 import kpiRouter from './routes/kpi'
 import reportsRouter from './routes/reports'
 import settingsRouter from './routes/settings'
+import plannerRouter from './routes/planner'
 import qaRouter from './routes/qa'
 import decisionRightsRouter from './routes/decision-rights'
 import proofCorrectionsRouter from './routes/proof-corrections'
@@ -35,6 +36,7 @@ app.use('/api/mistakes', mistakesRouter)
 app.use('/api/kpi', kpiRouter)
 app.use('/api/reports', reportsRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/planner', plannerRouter)
 app.use('/api/qa', qaRouter)
 app.use('/api/decision-rights', decisionRightsRouter)
 app.use('/api/proof-corrections', proofCorrectionsRouter)
