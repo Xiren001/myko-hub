@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 import { supabase } from '../supabase'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
-const FROM_EMAIL = process.env.NOTIFICATION_FROM_EMAIL ?? 'notifications@ecomfaszik.com'
+const FROM_EMAIL = process.env.NOTIFICATION_FROM_EMAIL ?? 'EcomFaszik <notifications@notification.thenivora.co>'
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
 export interface NotifyResult {
@@ -66,11 +66,17 @@ export async function sendProofNotificationsForLanguage(language: string): Promi
   </p>
 </div>`
 
-  await Promise.all(
+  const results = await Promise.all(
     emailConfig.emails.map((to: string) =>
       resend.emails.send({ from: FROM_EMAIL, to, subject, html })
     )
   )
+
+  const failed = results.filter(r => r.error)
+  if (failed.length) {
+    const reasons = failed.map(r => r.error?.message ?? 'unknown').join('; ')
+    return { sent: false, count, reason: `Resend error: ${reasons}` }
+  }
 
   await supabase
     .from('proof_products')

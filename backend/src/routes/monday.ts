@@ -121,22 +121,14 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
     .maybeSingle()
   if (existing) return
 
-  const language = variant.toUpperCase()
-
-  const { error: insertErr } = await supabase.from('proof_products').insert({
+  await supabase.from('proof_products').insert({
     product_name: productName,
-    language,
+    language:     null,
     pdp_url:      (sub.page_link ?? null) as string | null,
     drive_folder: (sub.drive_link ?? null) as string | null,
     done:         false,
     month_year:   new Date().toISOString().slice(0, 7),
   })
-
-  if (!insertErr) {
-    enqueueNotification(language).catch(err =>
-      console.error('[proof-notify] enqueue error:', err)
-    )
-  }
 }
 
 // ── Public webhook (no auth — Monday.com calls this) ──────────────────────
