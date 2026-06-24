@@ -740,11 +740,21 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     item.landing_page_status?.toLowerCase() === 'launched'
   ).length
 
-  // 2. Avg days from spot (item.created_at) to EN Phase 1 done (lp_ready_at)
-  const avgSpotToEnLaunch = avgOf(items.map(({ item, subitems: subs }) => {
-    const en = getLang(subs, 'en')
-    return daysBetween(item.created_at, en?.lp_ready_at)
-  }))
+  // 2. Avg Phase 1 days for EN/English subitems in Wave 1
+  //    denominator = all EN subs in Wave 1; numerator = those with both phase dates
+  const getEnSub = (subs: any[]) =>
+    subs.find((s: any) => { const n = s.name?.trim().toLowerCase(); return n === 'en' || n === 'english' })
+  const wave1EnSubs = items
+    .filter(({ item }) => item.monday_waves?.wave_number === 1)
+    .map(({ subitems: subs }) => getEnSub(subs))
+    .filter(Boolean)
+  const wave1EnPhase1Sum = wave1EnSubs.reduce((sum: number, s: any) => {
+    const d = daysBetween(s.lp_building_at, s.lp_ready_at)
+    return sum + (d ?? 0)
+  }, 0)
+  const avgSpotToEnLaunch = wave1EnSubs.length > 0
+    ? Math.round(wave1EnPhase1Sum / wave1EnSubs.length * 10) / 10
+    : null
 
   // 3. Avg days in Proofread phase
   const avgDaysProofread = avgOf(allSubs.map((s: any) => {
