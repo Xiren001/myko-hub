@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
+import { enqueueNotification } from '../jobs/notificationScheduler'
 
 const router = Router()
 
@@ -120,13 +121,22 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
     .maybeSingle()
   if (existing) return
 
-  await supabase.from('proof_products').insert({
+  const language = variant.toUpperCase()
+
+  const { error: insertErr } = await supabase.from('proof_products').insert({
     product_name: productName,
+    language,
     pdp_url:      (sub.page_link ?? null) as string | null,
     drive_folder: (sub.drive_link ?? null) as string | null,
     done:         false,
     month_year:   new Date().toISOString().slice(0, 7),
   })
+
+  if (!insertErr) {
+    enqueueNotification(language).catch(err =>
+      console.error('[proof-notify] enqueue error:', err)
+    )
+  }
 }
 
 // ── Public webhook (no auth — Monday.com calls this) ──────────────────────

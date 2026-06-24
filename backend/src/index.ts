@@ -17,8 +17,10 @@ import translateRouter from './routes/translate'
 import teamTasksRouter from './routes/team-tasks'
 import adminUsersRouter from './routes/admin-users'
 import mondayRouter from './routes/monday'
+import proofNotificationsRouter from './routes/proof-notifications'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
+import { startNotificationScheduler } from './jobs/notificationScheduler'
 
 const app = express()
 
@@ -44,6 +46,10 @@ app.use('/api/translate', translateRouter)
 app.use('/api/team-tasks', teamTasksRouter)
 app.use('/api/admin/users', adminUsersRouter)
 app.use('/api/monday', mondayRouter)
+app.use('/api/proof-notifications', proofNotificationsRouter)
 
 const PORT = process.env.PORT ?? 3001
-app.listen(PORT, () => console.log(`Backend running on port ${PORT}`))
+app.listen(PORT, () => {
+  console.log(`Backend running on port ${PORT}`)
+  startNotificationScheduler()
+})
