@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireManagement, requireCorrectionWrite, AuthRequest } from '../middleware/auth'
+import { authenticate, requireAdmin, requireManagement, requireCorrectionWrite, AuthRequest } from '../middleware/auth'
 import { enqueueNotification } from '../jobs/notificationScheduler'
 
 const router = Router()
@@ -36,8 +36,8 @@ router.get('/products/:id/corrections', authenticate, async (req: AuthRequest, r
   res.json(data ?? [])
 })
 
-// POST /products — admin + management only
-router.post('/products', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
+// POST /products — admin only
+router.post('/products', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('proof_products')
     .insert(req.body)
@@ -58,10 +58,10 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
   const role = req.userRole ?? ''
 
   let updateData: Record<string, unknown>
-  if (role === 'admin' || role === 'management') {
+  if (role === 'admin') {
     const { correction_count, ...rest } = req.body
     updateData = rest
-  } else if (role === 'proofreader') {
+  } else if (role === 'management' || role === 'proofreader') {
     const { ready_for_revision } = req.body as { ready_for_revision?: boolean }
     updateData = { ready_for_revision }
   } else if (role === 'ads') {
@@ -122,7 +122,7 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
 
   // Sync to linked jewelry build when done actually changes
   const doneChanged = 'done' in updateData && (
-    (role === 'admin' || role === 'management') || data.done !== prevDone
+    role === 'admin' || data.done !== prevDone
   )
   if (doneChanged && data.language && data.language !== 'EN') {
     const isDone = data.done as boolean
@@ -158,8 +158,8 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
   res.json(data)
 })
 
-// DELETE /products/:id — admin + management only
-router.delete('/products/:id', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
+// DELETE /products/:id — admin only
+router.delete('/products/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('proof_products').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
