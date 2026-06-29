@@ -751,6 +751,18 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
     : null
 
+  // Avg Phase 1 days for non-EN subitems in Wave 1 (lp_building_at → lp_ready_at)
+  const nonEnPhase1Days = nonEnSubs
+    .map((s: any) => {
+      if (!s.lp_building_at || !s.lp_ready_at) return null
+      const days = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
+      return days >= 0 ? days : null
+    })
+    .filter((d): d is number => d !== null)
+  const avgDaysEnToOthers = nonEnPhase1Days.length > 0
+    ? Math.round(nonEnPhase1Days.reduce((a, b) => a + b, 0) / nonEnPhase1Days.length * 10) / 10
+    : null
+
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
@@ -760,6 +772,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     productsTested,
     avgDaysSpotToEnTest,
     avgDaysProofread,
+    avgDaysEnToOthers,
   })
 })
 
