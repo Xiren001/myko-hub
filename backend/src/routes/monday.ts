@@ -706,7 +706,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
     wave1Id
-      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
+      ? supabase.from('monday_subitems').select('name, product_name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
       : Promise.resolve({ data: [] }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
@@ -763,11 +763,21 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(allPhase1Days.reduce((a, b) => a + b, 0) / allPhase1Days.length * 10) / 10
     : null
 
-  // Proofread queue: subitems where website_status OR ad_status contains "proofread" (each subitem counts once)
+  // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
+  const { data: activeProofProducts } = await supabase
+    .from('proof_products')
+    .select('product_name')
+    .eq('done', false)
+  const proofProductNames = new Set(
+    (activeProofProducts ?? []).map((p: any) => p.product_name?.trim().toLowerCase()).filter(Boolean)
+  )
   const proofreadQueue = allWave1Subs.filter((s: any) => {
+    const n = s.name?.trim().toLowerCase()
+    if (n === 'en' || n === 'english') return false
     const web = s.website_status?.toLowerCase() ?? ''
     const ads = s.ad_status?.toLowerCase() ?? ''
-    return web.includes('proofread') || ads.includes('proofread')
+    if (!web.includes('proofread') && !ads.includes('proofread')) return false
+    return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
 
   return res.json({
