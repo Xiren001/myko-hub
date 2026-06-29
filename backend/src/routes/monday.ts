@@ -852,7 +852,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const waveIdMap: Record<number, string> = {}
   for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
   const waveIds27 = Object.values(waveIdMap)
-  const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running'])
+  const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running', 'ready to launch'])
   function computeTeamQueue(subs: any[]): { ad: Record<string, number>; web: Record<string, number> } {
     const ad: Record<string, number> = {}
     const web: Record<string, number> = {}
