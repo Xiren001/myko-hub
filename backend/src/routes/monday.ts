@@ -798,6 +798,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
           .from('monday_subitems')
           .select('monday_items!inner(id, name, wave_id)')
           .in('monday_items.wave_id', waveIds27)
+          .or('website_status.ilike.%launched%,website_status.ilike.%running%,ad_status.ilike.%launched%,ad_status.ilike.%running%')
       : Promise.resolve({ data: [] }),
   ])
   const totalActiveProducts = waveItemCountResults.reduce((sum, r) => sum + (((r as any).count) ?? 0), 0)
