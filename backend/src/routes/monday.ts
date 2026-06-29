@@ -718,33 +718,29 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
 
   const productsTested = (testedRes as any).count ?? 0
 
+  const isEnSub = (name: string) => /\b(en|english)\b/i.test(name ?? '')
+
   // Days from spot to English test done: avg Phase 1 days for EN subitems in Wave 1
-  const enSubs: any[] = ((enSubsRes as any).data ?? []).filter((s: any) => {
-    const n = s.name?.trim().toLowerCase()
-    return n === 'en' || n === 'english'
-  })
+  const allWave1Subs: any[] = (enSubsRes as any).data ?? []
+  const enSubs = allWave1Subs.filter((s: any) => isEnSub(s.name ?? ''))
   const enPhase1Days = enSubs
     .map((s: any) => {
       if (!s.lp_building_at || !s.lp_ready_at) return null
       const days = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
-      return days >= 0 ? days : null
+      return days > 0 ? days : null
     })
     .filter((d): d is number => d !== null)
   const avgDaysSpotToEnTest = enPhase1Days.length > 0
     ? Math.round(enPhase1Days.reduce((a, b) => a + b, 0) / enPhase1Days.length * 10) / 10
     : null
 
-  // Avg days in Proofread phase: non-EN subitems in Wave 1 with both proofread timestamps
-  const allWave1Subs: any[] = (enSubsRes as any).data ?? []
-  const nonEnSubs = allWave1Subs.filter((s: any) => {
-    const n = s.name?.trim().toLowerCase()
-    return n !== 'en' && n !== 'english'
-  })
+  // Avg days in Proofread phase: non-EN subitems in Wave 1
+  const nonEnSubs = allWave1Subs.filter((s: any) => !isEnSub(s.name ?? ''))
   const proofreadDays = nonEnSubs
     .map((s: any) => {
       if (!s.lp_proofread_at || !s.lp_ready_to_launch_at) return null
       const days = (new Date(s.lp_ready_to_launch_at).getTime() - new Date(s.lp_proofread_at).getTime()) / 86_400_000
-      return days >= 0 ? days : null
+      return days > 0 ? days : null
     })
     .filter((d): d is number => d !== null)
   const avgDaysProofread = proofreadDays.length > 0
@@ -756,7 +752,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .map((s: any) => {
       if (!s.lp_building_at || !s.lp_ready_at) return null
       const days = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
-      return days >= 0 ? days : null
+      return days > 0 ? days : null
     })
     .filter((d): d is number => d !== null)
   const avgDaysEnToOthers = allPhase1Days.length > 0
@@ -817,8 +813,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     (activeProofProducts ?? []).map((p: any) => p.product_name?.trim().toLowerCase()).filter(Boolean)
   )
   const proofreadQueue = allWave1Subs.filter((s: any) => {
-    const n = s.name?.trim().toLowerCase()
-    if (n === 'en' || n === 'english') return false
+    if (isEnSub(s.name ?? '')) return false
     const web = s.website_status?.toLowerCase() ?? ''
     const ads = s.ad_status?.toLowerCase() ?? ''
     if (!web.includes('proofread') && !ads.includes('proofread')) return false
