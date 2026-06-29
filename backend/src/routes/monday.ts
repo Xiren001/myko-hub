@@ -852,7 +852,25 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const waveIdMap: Record<number, string> = {}
   for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
   const waveIds27 = Object.values(waveIdMap)
-  const [waveSubsResults, waveItemCountResults, subsWithItemsResult] = await Promise.all([
+  const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running'])
+  function computeTeamQueue(subs: any[]): { ad: Record<string, number>; web: Record<string, number> } {
+    const ad: Record<string, number> = {}
+    const web: Record<string, number> = {}
+    for (const s of subs) {
+      const adS = (s.ad_status ?? '').trim()
+      const webS = (s.website_status ?? '').trim()
+      if (!TEAM_DONE.has(adS.toLowerCase())) {
+        const k = adS || 'Not set'
+        ad[k] = (ad[k] ?? 0) + 1
+      }
+      if (!TEAM_DONE.has(webS.toLowerCase())) {
+        const k = webS || 'Not set'
+        web[k] = (web[k] ?? 0) + 1
+      }
+    }
+    return { ad, web }
+  }
+  const [waveSubsResults, waveItemCountResults, subsWithItemsResult, teamQueueSubs27Result] = await Promise.all([
     Promise.all(
       [2, 3, 4, 5, 6, 7].map(wn =>
         waveIdMap[wn]
@@ -876,6 +894,12 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
           .select('monday_items!inner(id, name, wave_id)')
           .in('monday_items.wave_id', waveIds27)
           .or('website_status.ilike.%launched%,website_status.ilike.%running%,ad_status.ilike.%launched%,ad_status.ilike.%running%')
+      : Promise.resolve({ data: [] }),
+    waveIds27.length > 0
+      ? supabase
+          .from('monday_subitems')
+          .select('ad_status, website_status, monday_items!inner(wave_id)')
+          .in('monday_items.wave_id', waveIds27)
       : Promise.resolve({ data: [] }),
   ])
   const totalActiveProducts = waveItemCountResults.reduce((sum, r) => sum + (((r as any).count) ?? 0), 0)
@@ -918,6 +942,11 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
       .filter((d): d is number => d !== null)
     return { wave: wn, avg: avgDaysArr(days) }
   })
+
+  const teamQueue = {
+    wave1: computeTeamQueue(allWave1Subs),
+    waves27: computeTeamQueue((teamQueueSubs27Result as any).data ?? []),
+  }
 
   // Avg revenue per active winner + profitable language launches
   const [{ data: langSalesData }, { data: productSalesData }] = await Promise.all([
@@ -976,6 +1005,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgRevenuePerWinner,
     activeWinnerCount,
     productSalesUpdatedAt,
+    teamQueue,
   })
 })
 
