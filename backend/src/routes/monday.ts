@@ -732,6 +732,26 @@ router.post('/language-sales/upload', authenticate, express.text({ type: '*/*', 
   res.json({ ok: true, uploaded: rows.length })
 })
 
+// ── POST /api/monday/product-sales/upload ────────────────────────────────
+router.post('/product-sales/upload', authenticate, express.text({ type: '*/*', limit: '5mb' }), async (req: AuthRequest, res: Response) => {
+  const csvText = req.body as string
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim())
+  const rows: { product_title: string; net_sales: number; updated_at: string }[] = []
+  const now = new Date().toISOString()
+  for (const line of lines.slice(1)) {
+    const cols = parseCSVLine(line)
+    if (cols.length < 2) continue
+    const product_title = cols[0]
+    const net_sales = parseFloat(cols[1]) || 0
+    if (!product_title) continue
+    rows.push({ product_title, net_sales, updated_at: now })
+  }
+  await supabase.from('product_sales').delete().neq('product_title', '')
+  const { error } = await supabase.from('product_sales').insert(rows)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true, uploaded: rows.length })
+})
+
 // ── GET /api/monday/waves-weekly-report ──────────────────────────────────
 router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: Response) => {
   const { weekStart: weekStartParam } = req.query
@@ -899,16 +919,24 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     return { wave: wn, avg: avgDaysArr(days) }
   })
 
-  // Profitable language launches: % of wave 2–7 language markets where net_sales > cogs
-  const { data: langSalesData } = await supabase
-    .from('language_sales')
-    .select('lang_code, net_sales, cogs, updated_at')
+  // Avg revenue per active winner + profitable language launches
+  const [{ data: langSalesData }, { data: productSalesData }] = await Promise.all([
+    supabase.from('language_sales').select('lang_code, net_sales, cogs, updated_at'),
+    supabase.from('product_sales').select('net_sales, updated_at'),
+  ])
   const totalLaunches = langSalesData?.length ?? 0
   const profitableLaunches = (langSalesData ?? []).filter((r: any) => r.net_sales > r.cogs).length
   const profitableLaunchPct = totalLaunches > 0
     ? Math.round((profitableLaunches / totalLaunches) * 100)
     : null
   const salesDataUpdatedAt = langSalesData?.[0]?.updated_at ?? null
+  const productSalesRows = productSalesData ?? []
+  const totalProductRevenue = productSalesRows.reduce((sum, r: any) => sum + (r.net_sales ?? 0), 0)
+  const activeWinnerCount = productSalesRows.length
+  const avgRevenuePerWinner = activeWinnerCount > 0
+    ? Math.round(totalProductRevenue / activeWinnerCount)
+    : null
+  const productSalesUpdatedAt = productSalesRows[0]?.updated_at ?? null
 
   // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
   const { data: activeProofProducts } = await supabase
@@ -945,6 +973,9 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     profitableLaunches,
     totalLaunches,
     salesDataUpdatedAt,
+    avgRevenuePerWinner,
+    activeWinnerCount,
+    productSalesUpdatedAt,
   })
 })
 
