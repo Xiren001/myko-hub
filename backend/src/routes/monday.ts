@@ -695,22 +695,18 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
 
   // Wave 1 → Wave 2: all Wave 2 products came from Wave 1, so
   // graduated = Wave 2 count, total cohort = Wave 1 + Wave 2
-  const { data: waves17 } = await supabase
+  const { data: waves12 } = await supabase
     .from('monday_waves')
     .select('id, wave_number')
-    .in('wave_number', [1, 2, 3, 4, 5, 6, 7])
-  const wave1Id = (waves17 ?? []).find((w: any) => w.wave_number === 1)?.id
-  const wave2Id = (waves17 ?? []).find((w: any) => w.wave_number === 2)?.id
-  const wave2to7Ids = (waves17 ?? []).filter((w: any) => w.wave_number >= 2 && w.wave_number <= 7).map((w: any) => w.id)
-  const [w1Res, w2Res, testedRes, enSubsRes, wave2to7SubsRes] = await Promise.all([
+    .in('wave_number', [1, 2])
+  const wave1Id = (waves12 ?? []).find((w: any) => w.wave_number === 1)?.id
+  const wave2Id = (waves12 ?? []).find((w: any) => w.wave_number === 2)?.id
+  const [w1Res, w2Res, testedRes, enSubsRes] = await Promise.all([
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id) : Promise.resolve({ count: 0 }),
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
     wave1Id
       ? supabase.from('monday_subitems').select('name, product_name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
-      : Promise.resolve({ data: [] }),
-    wave2to7Ids.length > 0
-      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)').in('monday_items.wave_id', wave2to7Ids)
       : Promise.resolve({ data: [] }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
@@ -784,19 +780,6 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
 
-  // Avg Phase 1 days for all subitems in Waves 2-7
-  const wave2to7Subs: any[] = (wave2to7SubsRes as any).data ?? []
-  const wave2to7Phase1Days = wave2to7Subs
-    .map((s: any) => {
-      if (!s.lp_building_at || !s.lp_ready_at) return null
-      const days = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
-      return days >= 0 ? days : null
-    })
-    .filter((d): d is number => d !== null)
-  const avgDaysPhase1Wave2to7 = wave2to7Phase1Days.length > 0
-    ? Math.round(wave2to7Phase1Days.reduce((a, b) => a + b, 0) / wave2to7Phase1Days.length * 10) / 10
-    : null
-
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
@@ -808,7 +791,6 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysProofread,
     avgDaysEnToOthers,
     proofreadQueue,
-    avgDaysPhase1Wave2to7,
   })
 })
 
