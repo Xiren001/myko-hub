@@ -701,10 +701,13 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .in('wave_number', [1, 2])
   const wave1Id = (waves12 ?? []).find((w: any) => w.wave_number === 1)?.id
   const wave2Id = (waves12 ?? []).find((w: any) => w.wave_number === 2)?.id
-  const [w1Res, w2Res, testedRes] = await Promise.all([
+  const [w1Res, w2Res, testedRes, enSubsRes] = await Promise.all([
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id) : Promise.resolve({ count: 0 }),
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
+    wave1Id
+      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
+      : Promise.resolve({ data: [] }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
   const wave2Count = (w2Res as any).count ?? 0
@@ -715,6 +718,22 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
 
   const productsTested = (testedRes as any).count ?? 0
 
+  // Days from spot to English test done: avg Phase 1 days for EN subitems in Wave 1
+  const enSubs: any[] = ((enSubsRes as any).data ?? []).filter((s: any) => {
+    const n = s.name?.trim().toLowerCase()
+    return n === 'en' || n === 'english'
+  })
+  const enPhase1Days = enSubs
+    .map((s: any) => {
+      if (!s.lp_building_at || !s.lp_ready_at) return null
+      const days = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
+      return days >= 0 ? days : null
+    })
+    .filter((d): d is number => d !== null)
+  const avgDaysSpotToEnTest = enPhase1Days.length > 0
+    ? Math.round(enPhase1Days.reduce((a, b) => a + b, 0) / enPhase1Days.length * 10) / 10
+    : null
+
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
@@ -722,6 +741,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     wave1ToWave2Count: wave2Count,
     pctWave1ToWave2,
     productsTested,
+    avgDaysSpotToEnTest,
   })
 })
 
