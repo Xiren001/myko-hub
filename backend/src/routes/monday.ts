@@ -908,7 +908,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     waveIds27.length > 0
       ? supabase
           .from('monday_subitems')
-          .select('ad_status, website_status, monday_items!inner(wave_id)')
+          .select('ad_status, website_status, product_name, monday_items!inner(wave_id)')
           .in('monday_items.wave_id', waveIds27)
       : Promise.resolve({ data: [] }),
   ])
@@ -992,6 +992,12 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     if (!web.includes('proofread') && !ads.includes('proofread')) return false
     return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
+  const proofreadQueueWaves27 = ((teamQueueSubs27Result as any).data ?? []).filter((s: any) => {
+    const web = s.website_status?.toLowerCase() ?? ''
+    const ads = s.ad_status?.toLowerCase() ?? ''
+    if (!web.includes('proofread') && !ads.includes('proofread')) return false
+    return proofProductNames.has(s.product_name?.trim().toLowerCase())
+  }).length
 
   return res.json({
     weekStart: ws.toISOString(),
@@ -1004,6 +1010,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysProofread,
     avgDaysEnToOthers,
     proofreadQueue,
+    proofreadQueueWaves27,
     newWaveCampaignAvgDays,
     avgLangsPerProduct,
     mostLangsProduct,
