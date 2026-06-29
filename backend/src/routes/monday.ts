@@ -774,16 +774,30 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .in('wave_number', [2, 3, 4, 5, 6, 7])
   const waveIdMap: Record<number, string> = {}
   for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
-  const waveSubsResults = await Promise.all(
-    [2, 3, 4, 5, 6, 7].map(wn =>
-      waveIdMap[wn]
-        ? supabase
-            .from('monday_subitems')
-            .select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)')
-            .eq('monday_items.wave_id', waveIdMap[wn])
-        : Promise.resolve({ data: [] })
-    )
-  )
+  const [waveSubsResults, waveItemCountResults] = await Promise.all([
+    Promise.all(
+      [2, 3, 4, 5, 6, 7].map(wn =>
+        waveIdMap[wn]
+          ? supabase
+              .from('monday_subitems')
+              .select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)')
+              .eq('monday_items.wave_id', waveIdMap[wn])
+          : Promise.resolve({ data: [] })
+      )
+    ),
+    Promise.all(
+      [2, 3, 4, 5, 6, 7].map(wn =>
+        waveIdMap[wn]
+          ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', waveIdMap[wn])
+          : Promise.resolve({ count: 0 })
+      )
+    ),
+  ])
+  const totalActiveProducts = waveItemCountResults.reduce((sum, r) => sum + (((r as any).count) ?? 0), 0)
+  const totalLangVersions = waveSubsResults.reduce((sum, r) => sum + (((r as any).data?.length) ?? 0), 0)
+  const avgLangsPerProduct = totalActiveProducts > 0
+    ? Math.round((totalLangVersions / totalActiveProducts) * 10) / 10
+    : null
   const avgDaysArr = (arr: number[]) =>
     arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
   const hasLangTerm = (name: string, terms: string[]): boolean => {
@@ -832,6 +846,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysEnToOthers,
     proofreadQueue,
     newWaveCampaignAvgDays,
+    avgLangsPerProduct,
   })
 })
 
