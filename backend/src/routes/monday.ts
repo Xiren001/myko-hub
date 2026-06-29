@@ -790,19 +790,22 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   )
   const avgDaysArr = (arr: number[]) =>
     arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
+  const hasLangTerm = (name: string, terms: string[]): boolean => {
+    const n = name.toLowerCase()
+    return terms.some(term => new RegExp(`\\b${term.replace(/[-/]/g, '[\\-/]')}\\b`, 'i').test(n))
+  }
   const newWaveCampaignAvgDays = [2, 3, 4, 5, 6, 7].map((wn, idx) => {
     const subs: any[] = ((waveSubsResults[idx] as any).data ?? [])
-    const langs = new Set(NEW_WAVE_LANGS[wn])
+    const terms = NEW_WAVE_LANGS[wn]
     const days = subs
-      .filter((s: any) => langs.has(s.name?.trim().toLowerCase()))
+      .filter((s: any) => hasLangTerm(s.name ?? '', terms))
       .map((s: any) => {
         if (!s.lp_building_at || !s.lp_ready_at) return null
         const d = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
         return d > 0 ? d : null
       })
       .filter((d): d is number => d !== null)
-    const distinctNames = [...new Set(subs.map((s: any) => s.name).filter(Boolean))].slice(0, 20)
-    return { wave: wn, avg: avgDaysArr(days), _debug_names: distinctNames, _debug_total: subs.length }
+    return { wave: wn, avg: avgDaysArr(days) }
   })
 
   // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
