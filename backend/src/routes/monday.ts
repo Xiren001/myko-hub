@@ -798,7 +798,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
       .map((s: any) => {
         if (!s.lp_building_at || !s.lp_ready_at) return null
         const d = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
-        return d >= 0 ? d : null
+        return d > 0 ? d : null
       })
       .filter((d): d is number => d !== null)
     return { wave: wn, avg: avgDaysArr(days) }
