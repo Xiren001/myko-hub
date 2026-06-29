@@ -763,6 +763,47 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(allPhase1Days.reduce((a, b) => a + b, 0) / allPhase1Days.length * 10) / 10
     : null
 
+  // Arriving to new Wave: avg Phase 1 days for new language subitems introduced per wave
+  const NEW_WAVE_LANGS: Record<number, string[]> = {
+    2: ['france', 'fr', 'french', 'netherlands', 'nl', 'dutch', 'italy', 'it', 'italian'],
+    3: ['finland', 'fi', 'finnish', 'sweden', 'se', 'swedish', 'norway', 'no', 'norwegian'],
+    4: ['israel', 'il', 'hebrew', 'brazil', 'br', 'portuguese', 'pt', 'pt-br', 'japan', 'jp', 'japanese', 'ja'],
+    5: ['denmark', 'dk', 'danish', 'da', 'czech republic', 'czech', 'cz', 'cs', 'poland', 'pl', 'polish'],
+    6: ['turkey', 'türkiye', 'tr', 'turkish', 'lithuania', 'lt', 'lithuanian', 'estonia', 'ee', 'estonian', 'et'],
+    7: ['slovakia', 'sk', 'slovak', 'slovenia', 'si', 'slovenian', 'sl', 'romania', 'ro', 'romanian'],
+  }
+  const { data: waves27 } = await supabase
+    .from('monday_waves')
+    .select('id, wave_number')
+    .in('wave_number', [2, 3, 4, 5, 6, 7])
+  const waveIdMap: Record<number, string> = {}
+  for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
+  const waveSubsResults = await Promise.all(
+    [2, 3, 4, 5, 6, 7].map(wn =>
+      waveIdMap[wn]
+        ? supabase
+            .from('monday_subitems')
+            .select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)')
+            .eq('monday_items.wave_id', waveIdMap[wn])
+        : Promise.resolve({ data: [] })
+    )
+  )
+  const avgDaysArr = (arr: number[]) =>
+    arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
+  const newWaveCampaignAvgDays = [2, 3, 4, 5, 6, 7].map((wn, idx) => {
+    const subs: any[] = ((waveSubsResults[idx] as any).data ?? [])
+    const langs = new Set(NEW_WAVE_LANGS[wn])
+    const days = subs
+      .filter((s: any) => langs.has(s.name?.trim().toLowerCase()))
+      .map((s: any) => {
+        if (!s.lp_building_at || !s.lp_ready_at) return null
+        const d = (new Date(s.lp_ready_at).getTime() - new Date(s.lp_building_at).getTime()) / 86_400_000
+        return d >= 0 ? d : null
+      })
+      .filter((d): d is number => d !== null)
+    return { wave: wn, avg: avgDaysArr(days) }
+  })
+
   // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
   const { data: activeProofProducts } = await supabase
     .from('proof_products')
@@ -791,6 +832,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysProofread,
     avgDaysEnToOthers,
     proofreadQueue,
+    newWaveCampaignAvgDays,
   })
 })
 
