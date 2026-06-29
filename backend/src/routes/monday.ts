@@ -774,7 +774,8 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .in('wave_number', [2, 3, 4, 5, 6, 7])
   const waveIdMap: Record<number, string> = {}
   for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
-  const [waveSubsResults, waveItemCountResults] = await Promise.all([
+  const waveIds27 = Object.values(waveIdMap)
+  const [waveSubsResults, waveItemCountResults, subsWithItemsResult] = await Promise.all([
     Promise.all(
       [2, 3, 4, 5, 6, 7].map(wn =>
         waveIdMap[wn]
@@ -792,11 +793,28 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
           : Promise.resolve({ count: 0 })
       )
     ),
+    waveIds27.length > 0
+      ? supabase
+          .from('monday_subitems')
+          .select('monday_items!inner(id, name, wave_id)')
+          .in('monday_items.wave_id', waveIds27)
+      : Promise.resolve({ data: [] }),
   ])
   const totalActiveProducts = waveItemCountResults.reduce((sum, r) => sum + (((r as any).count) ?? 0), 0)
   const totalLangVersions = waveSubsResults.reduce((sum, r) => sum + (((r as any).data?.length) ?? 0), 0)
   const avgLangsPerProduct = totalActiveProducts > 0
     ? Math.round((totalLangVersions / totalActiveProducts) * 10) / 10
+    : null
+  const itemLangCounts: Record<string, { name: string; count: number }> = {}
+  for (const s of ((subsWithItemsResult as any).data ?? [])) {
+    const item = (s as any).monday_items
+    if (!item?.id) continue
+    if (!itemLangCounts[item.id]) itemLangCounts[item.id] = { name: item.name ?? 'Unknown', count: 0 }
+    itemLangCounts[item.id].count++
+  }
+  const langEntries = Object.values(itemLangCounts)
+  const mostLangsProduct = langEntries.length > 0
+    ? langEntries.reduce((best, cur) => cur.count > best.count ? cur : best)
     : null
   const avgDaysArr = (arr: number[]) =>
     arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
@@ -847,6 +865,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     proofreadQueue,
     newWaveCampaignAvgDays,
     avgLangsPerProduct,
+    mostLangsProduct,
   })
 })
 
