@@ -706,7 +706,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
     wave1Id
-      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
+      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
       : Promise.resolve({ data: [] }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
@@ -734,6 +734,23 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(enPhase1Days.reduce((a, b) => a + b, 0) / enPhase1Days.length * 10) / 10
     : null
 
+  // Avg days in Proofread phase: non-EN subitems in Wave 1 with both proofread timestamps
+  const allWave1Subs: any[] = (enSubsRes as any).data ?? []
+  const nonEnSubs = allWave1Subs.filter((s: any) => {
+    const n = s.name?.trim().toLowerCase()
+    return n !== 'en' && n !== 'english'
+  })
+  const proofreadDays = nonEnSubs
+    .map((s: any) => {
+      if (!s.lp_proofread_at || !s.lp_ready_to_launch_at) return null
+      const days = (new Date(s.lp_ready_to_launch_at).getTime() - new Date(s.lp_proofread_at).getTime()) / 86_400_000
+      return days >= 0 ? days : null
+    })
+    .filter((d): d is number => d !== null)
+  const avgDaysProofread = proofreadDays.length > 0
+    ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
+    : null
+
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
@@ -742,6 +759,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     pctWave1ToWave2,
     productsTested,
     avgDaysSpotToEnTest,
+    avgDaysProofread,
   })
 })
 
