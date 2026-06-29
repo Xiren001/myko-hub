@@ -21,6 +21,7 @@ import proofNotificationsRouter from './routes/proof-notifications'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 import { startNotificationScheduler } from './jobs/notificationScheduler'
+import { startWaveReportCron } from './jobs/waveReportCron'
 
 const app = express()
 
@@ -52,4 +53,5 @@ const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`)
   startNotificationScheduler()
+  startWaveReportCron()
 })
