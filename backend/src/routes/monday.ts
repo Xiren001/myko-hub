@@ -801,7 +801,8 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
         return d > 0 ? d : null
       })
       .filter((d): d is number => d !== null)
-    return { wave: wn, avg: avgDaysArr(days) }
+    const distinctNames = [...new Set(subs.map((s: any) => s.name).filter(Boolean))].slice(0, 20)
+    return { wave: wn, avg: avgDaysArr(days), _debug_names: distinctNames, _debug_total: subs.length }
   })
 
   // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
