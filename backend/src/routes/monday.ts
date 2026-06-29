@@ -701,9 +701,10 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     .in('wave_number', [1, 2])
   const wave1Id = (waves12 ?? []).find((w: any) => w.wave_number === 1)?.id
   const wave2Id = (waves12 ?? []).find((w: any) => w.wave_number === 2)?.id
-  const [w1Res, w2Res] = await Promise.all([
+  const [w1Res, w2Res, testedRes] = await Promise.all([
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id) : Promise.resolve({ count: 0 }),
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
+    wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
   const wave2Count = (w2Res as any).count ?? 0
@@ -712,12 +713,15 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(wave2Count / totalCohort * 100)
     : null
 
+  const productsTested = (testedRes as any).count ?? 0
+
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
     wave1Total: wave1Count,
     wave1ToWave2Count: wave2Count,
     pctWave1ToWave2,
+    productsTested,
   })
 })
 
