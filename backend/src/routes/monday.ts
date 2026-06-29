@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express'
+import express, { Router, Request, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
 import { enqueueNotification } from '../jobs/notificationScheduler'
@@ -7,6 +7,29 @@ const router = Router()
 
 const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN ?? ''
 const WEBHOOK_URL = 'https://backend-production-1ba8.up.railway.app/api/monday/webhook'
+
+const COUNTRY_TO_LANG: Record<string, string> = {
+  'France': 'FR', 'Netherlands': 'NL', 'Italy': 'IT',
+  'Finland': 'FI', 'Sweden': 'SE', 'Norway': 'NO',
+  'Israel': 'IL', 'Brazil': 'BR', 'Japan': 'JP',
+  'Denmark': 'DK', 'Czech Republic': 'CZ', 'Czechia': 'CZ',
+  'Poland': 'PL', 'Turkey': 'TR', 'Türkiye': 'TR',
+  'Lithuania': 'LT', 'Estonia': 'EE',
+  'Slovakia': 'SK', 'Slovenia': 'SI', 'Romania': 'RO',
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = []
+  let cur = ''
+  let inQ = false
+  for (const ch of line) {
+    if (ch === '"') { inQ = !inQ }
+    else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = '' }
+    else { cur += ch }
+  }
+  result.push(cur.trim())
+  return result
+}
 
 // Parent board ID → wave number (0 = Stopped)
 const PARENT_BOARD_MAP: Record<string, number> = {
@@ -675,6 +698,40 @@ router.post('/register-crud-hooks', authenticate, requireAdmin, async (_req: Aut
   return res.json({ ok: true, results })
 })
 
+// ── POST /api/monday/language-sales/upload ───────────────────────────────
+router.post('/language-sales/upload', authenticate, express.text({ type: '*/*', limit: '5mb' }), async (req: AuthRequest, res: Response) => {
+  const csvText = req.body as string
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim())
+  // skip header row
+  const langAgg: Record<string, { country: string; net_sales: number; cogs: number }> = {}
+  for (const line of lines.slice(1)) {
+    const cols = parseCSVLine(line)
+    if (cols.length < 4) continue
+    const country = cols[0]
+    const net_sales = parseFloat(cols[2]) || 0
+    const cogs = parseFloat(cols[3]) || 0
+    const lang = COUNTRY_TO_LANG[country]
+    if (!lang) continue
+    if (!langAgg[lang]) langAgg[lang] = { country, net_sales: 0, cogs: 0 }
+    langAgg[lang].net_sales += net_sales
+    langAgg[lang].cogs += cogs
+  }
+  const rows = Object.entries(langAgg)
+    .filter(([, d]) => d.net_sales > 0 || d.cogs > 0)
+    .map(([lang_code, d]) => ({
+      lang_code,
+      country: d.country,
+      net_sales: Math.round(d.net_sales * 100) / 100,
+      cogs: Math.round(d.cogs * 100) / 100,
+      updated_at: new Date().toISOString(),
+    }))
+  // replace all existing data with the new upload
+  await supabase.from('language_sales').delete().neq('lang_code', '')
+  const { error } = await supabase.from('language_sales').insert(rows)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true, uploaded: rows.length })
+})
+
 // ── GET /api/monday/waves-weekly-report ──────────────────────────────────
 router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: Response) => {
   const { weekStart: weekStartParam } = req.query
@@ -842,6 +899,17 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     return { wave: wn, avg: avgDaysArr(days) }
   })
 
+  // Profitable language launches: % of wave 2–7 language markets where net_sales > cogs
+  const { data: langSalesData } = await supabase
+    .from('language_sales')
+    .select('lang_code, net_sales, cogs, updated_at')
+  const totalLaunches = langSalesData?.length ?? 0
+  const profitableLaunches = (langSalesData ?? []).filter((r: any) => r.net_sales > r.cogs).length
+  const profitableLaunchPct = totalLaunches > 0
+    ? Math.round((profitableLaunches / totalLaunches) * 100)
+    : null
+  const salesDataUpdatedAt = langSalesData?.[0]?.updated_at ?? null
+
   // Proofread queue: Wave 1 non-EN subitems with proofread status whose product_name is in proof_products (done=false)
   const { data: activeProofProducts } = await supabase
     .from('proof_products')
@@ -873,6 +941,10 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgLangsPerProduct,
     mostLangsProduct,
     activeWinners,
+    profitableLaunchPct,
+    profitableLaunches,
+    totalLaunches,
+    salesDataUpdatedAt,
   })
 })
 
