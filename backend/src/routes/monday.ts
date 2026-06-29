@@ -706,7 +706,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
     wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id).ilike('landing_page_status', 'launched') : Promise.resolve({ count: 0 }),
     wave1Id
-      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
+      ? supabase.from('monday_subitems').select('name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(wave_id)').eq('monday_items.wave_id', wave1Id)
       : Promise.resolve({ data: [] }),
   ])
   const wave1Count = (w1Res as any).count ?? 0
@@ -763,6 +763,13 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(allPhase1Days.reduce((a, b) => a + b, 0) / allPhase1Days.length * 10) / 10
     : null
 
+  // Proofread queue: subitems where website_status OR ad_status contains "proofread" (each subitem counts once)
+  const proofreadQueue = allWave1Subs.filter((s: any) => {
+    const web = s.website_status?.toLowerCase() ?? ''
+    const ads = s.ad_status?.toLowerCase() ?? ''
+    return web.includes('proofread') || ads.includes('proofread')
+  }).length
+
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
@@ -773,6 +780,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     avgDaysSpotToEnTest,
     avgDaysProofread,
     avgDaysEnToOthers,
+    proofreadQueue,
   })
 })
 
