@@ -693,7 +693,8 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   we.setDate(we.getDate() + 6)
   we.setHours(23, 59, 59, 999)
 
-  // Wave 1 → Wave 2 progression: how many Wave 1 products also appear in Wave 2 (by name)
+  // Wave 1 → Wave 2: all Wave 2 products came from Wave 1, so
+  // graduated = Wave 2 count, total cohort = Wave 1 + Wave 2
   const { data: waves12 } = await supabase
     .from('monday_waves')
     .select('id, wave_number')
@@ -701,24 +702,21 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const wave1Id = (waves12 ?? []).find((w: any) => w.wave_number === 1)?.id
   const wave2Id = (waves12 ?? []).find((w: any) => w.wave_number === 2)?.id
   const [w1Res, w2Res] = await Promise.all([
-    wave1Id ? supabase.from('monday_items').select('name').eq('wave_id', wave1Id) : Promise.resolve({ data: [] }),
-    wave2Id ? supabase.from('monday_items').select('name').eq('wave_id', wave2Id) : Promise.resolve({ data: [] }),
+    wave1Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave1Id) : Promise.resolve({ count: 0 }),
+    wave2Id ? supabase.from('monday_items').select('id', { count: 'exact', head: true }).eq('wave_id', wave2Id) : Promise.resolve({ count: 0 }),
   ])
-  const wave1Names = ((w1Res as any).data ?? []).map((i: any) => i.name?.trim().toLowerCase()).filter(Boolean)
-  const wave2NamesSet = new Set(
-    ((w2Res as any).data ?? []).map((i: any) => i.name?.trim().toLowerCase()).filter(Boolean)
-  )
-  const wave1Total = wave1Names.length
-  const wave1ToWave2Count = wave1Names.filter((n: string) => wave2NamesSet.has(n)).length
-  const pctWave1ToWave2 = wave1Total > 0
-    ? Math.round(wave1ToWave2Count / wave1Total * 100)
+  const wave1Count = (w1Res as any).count ?? 0
+  const wave2Count = (w2Res as any).count ?? 0
+  const totalCohort = wave1Count + wave2Count
+  const pctWave1ToWave2 = totalCohort > 0
+    ? Math.round(wave2Count / totalCohort * 100)
     : null
 
   return res.json({
     weekStart: ws.toISOString(),
     weekEnd: we.toISOString(),
-    wave1Total,
-    wave1ToWave2Count,
+    wave1Total: wave1Count,
+    wave1ToWave2Count: wave2Count,
     pctWave1ToWave2,
   })
 })
