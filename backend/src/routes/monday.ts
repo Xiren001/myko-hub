@@ -178,15 +178,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const value = parseWebhookValue(event.value, field)
       const subPayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
 
-      // Stamp phase timestamp when website_status advances on a subitem
-      if (field === 'website_status' && typeof value === 'string' && value) {
-        const tsField = lpPhaseField(value)
-        if (tsField) subPayload[tsField] = new Date().toISOString()
-      }
-
       await supabase.from('monday_subitems')
         .update(subPayload)
         .eq('monday_subitem_id', pulseId)
+
+      // Stamp phase timestamp only if not already set (preserves original date)
+      if (field === 'website_status' && typeof value === 'string' && value) {
+        const tsField = lpPhaseField(value)
+        if (tsField) {
+          await supabase.from('monday_subitems')
+            .update({ [tsField]: new Date().toISOString() })
+            .eq('monday_subitem_id', pulseId)
+            .is(tsField, null)
+        }
+      }
 
       if (field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
@@ -203,18 +208,23 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
       const updatePayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
 
-      // Stamp phase timestamp for landing_page_status (items) or website_status (subitems)
+      await supabase.from(table)
+        .update(updatePayload)
+        .eq(idCol, pulseId)
+
+      // Stamp phase timestamp only if not already set (preserves original date)
       if (typeof value === 'string' && value) {
         const isTracked = (!isSub && field === 'landing_page_status') || (isSub && field === 'website_status')
         if (isTracked) {
           const tsField = lpPhaseField(value)
-          if (tsField) updatePayload[tsField] = new Date().toISOString()
+          if (tsField) {
+            await supabase.from(table)
+              .update({ [tsField]: new Date().toISOString() })
+              .eq(idCol, pulseId)
+              .is(tsField, null)
+          }
         }
       }
-
-      await supabase.from(table)
-        .update(updatePayload)
-        .eq(idCol, pulseId)
 
       if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
