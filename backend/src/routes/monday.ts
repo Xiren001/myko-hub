@@ -817,6 +817,11 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const mostLangsProduct = langEntries.length > 0
     ? langEntries.reduce((best, cur) => cur.count > best.count ? cur : best)
     : null
+  const activeWinners = {
+    small:  langEntries.filter(e => e.count >= 1  && e.count <= 7).length,
+    medium: langEntries.filter(e => e.count >= 8  && e.count <= 15).length,
+    big:    langEntries.filter(e => e.count >= 16).length,
+  }
   const avgDaysArr = (arr: number[]) =>
     arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
   const hasLangTerm = (name: string, terms: string[]): boolean => {
@@ -867,6 +872,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     newWaveCampaignAvgDays,
     avgLangsPerProduct,
     mostLangsProduct,
+    activeWinners,
   })
 })
 
