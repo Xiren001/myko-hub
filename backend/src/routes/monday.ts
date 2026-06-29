@@ -692,119 +692,8 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
   const we = new Date(ws)
   we.setDate(we.getDate() + 6)
   we.setHours(23, 59, 59, 999)
-  const wsISO = ws.toISOString()
-  const weISO = we.toISOString()
 
-  function daysBetween(from: string | null | undefined, to: string | null | undefined): number | null {
-    if (!from || !to) return null
-    const d = (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000
-    return d < 0 ? null : d
-  }
-
-  function avgOf(values: (number | null)[]): number | null {
-    const valid = values.filter((v): v is number => v !== null && isFinite(v))
-    if (!valid.length) return null
-    return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length * 10) / 10
-  }
-
-  const { data: subitems, error } = await (supabase as any)
-    .from('monday_subitems')
-    .select(`
-      id, name, website_status, concluded,
-      lp_building_at, lp_ready_at,
-      lp_proofread_at, lp_ready_to_launch_at, lp_launched_at,
-      monday_items!inner(
-        id, name, created_at, landing_page_status,
-        monday_waves!inner(wave_number, name)
-      )
-    `)
-
-  if (error) return res.status(500).json({ error: error.message })
-
-  const allSubs: any[] = subitems ?? []
-
-  // Group subitems by item
-  const itemMap = new Map<string, { item: any; subitems: any[] }>()
-  for (const sub of allSubs) {
-    const mi = sub.monday_items
-    if (!mi) continue
-    const itemId = mi.id
-    if (!itemMap.has(itemId)) itemMap.set(itemId, { item: mi, subitems: [] })
-    itemMap.get(itemId)!.subitems.push(sub)
-  }
-  const items = Array.from(itemMap.values())
-
-  const getLang = (subs: any[], lang: string) =>
-    subs.find((s: any) => s.name?.trim().toLowerCase() === lang.toLowerCase())
-
-  // 1. Products tested: items whose landing_page_status is "launched"
-  const productsTestedFullSet = items.filter(({ item }) =>
-    item.landing_page_status?.toLowerCase() === 'launched'
-  ).length
-
-  // 2. Avg Phase 1 days for EN/English subitems in Wave 1
-  //    denominator = all EN subs in Wave 1; numerator = those with both phase dates
-  const getEnSub = (subs: any[]) =>
-    subs.find((s: any) => { const n = s.name?.trim().toLowerCase(); return n === 'en' || n === 'english' })
-  const wave1EnSubs = items
-    .filter(({ item }) => item.monday_waves?.wave_number === 1)
-    .map(({ subitems: subs }) => getEnSub(subs))
-    .filter(Boolean)
-  const wave1EnPhase1Days = wave1EnSubs
-    .map((s: any) => daysBetween(s.lp_building_at, s.lp_ready_at))
-    .filter((d): d is number => d !== null)
-  const avgSpotToEnLaunch = wave1EnPhase1Days.length > 0
-    ? Math.round(wave1EnPhase1Days.reduce((a, b) => a + b, 0) / wave1EnPhase1Days.length * 10) / 10
-    : null
-
-  // 3. Avg proofread phase days: waves 1-7, non-EN/English subitems only
-  const proofreadDays = allSubs
-    .filter((s: any) => {
-      const waveNum = s.monday_items?.monday_waves?.wave_number
-      if (waveNum === undefined || waveNum === 0) return false
-      const n = s.name?.trim().toLowerCase()
-      return n !== 'en' && n !== 'english'
-    })
-    .map((s: any) => daysBetween(s.lp_proofread_at, s.lp_ready_to_launch_at))
-    .filter((d): d is number => d !== null)
-  const avgDaysProofread = proofreadDays.length > 0
-    ? Math.round(proofreadDays.reduce((a, b) => a + b, 0) / proofreadDays.length * 10) / 10
-    : null
-
-  // 4. Avg Phase 1 days for non-EN subitems in Wave 1
-  const enToOthersDays = items
-    .filter(({ item }) => item.monday_waves?.wave_number === 1)
-    .flatMap(({ subitems: subs }) => subs
-      .filter((s: any) => { const n = s.name?.trim().toLowerCase(); return n !== 'en' && n !== 'english' })
-      .map((s: any) => daysBetween(s.lp_building_at, s.lp_ready_at))
-      .filter((d): d is number => d !== null)
-    )
-  const avgEnToOthersLaunch = enToOthersDays.length > 0
-    ? Math.round(enToOthersDays.reduce((a, b) => a + b, 0) / enToOthersDays.length * 10) / 10
-    : null
-
-  // 5. Proofread queue — mirrors the proofread-queue page exactly
-  // Active wave subitems: lp_proofread_at set + website_status still contains 'proofread'
-  const activeWaveProofSubs = allSubs.filter((s: any) =>
-    s.lp_proofread_at && s.website_status?.toLowerCase().includes('proofread')
-  )
-  // Active proof_products (directly added, not done, non-EN)
-  const { data: activeProofProducts } = await supabase
-    .from('proof_products')
-    .select('id')
-    .eq('done', false)
-    .or('language.is.null,language.neq.EN')
-  const totalActiveProofreadQueue = activeWaveProofSubs.length + (activeProofProducts ?? []).length
-
-  const wave2to7ProofreadQueue = activeWaveProofSubs.filter((s: any) => {
-    const wn = s.monday_items?.monday_waves?.wave_number
-    return wn >= 2 && wn <= 7
-  }).length
-
-  // Wave 1 = total active − wave 2-7
-  const wave1ProofreadQueue = totalActiveProofreadQueue - wave2to7ProofreadQueue
-
-  // 6. Wave 1 → Wave 2 progression: how many Wave 1 products also appear in Wave 2 (by name)
+  // Wave 1 → Wave 2 progression: how many Wave 1 products also appear in Wave 2 (by name)
   const { data: waves12 } = await supabase
     .from('monday_waves')
     .select('id, wave_number')
@@ -825,67 +714,12 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
     ? Math.round(wave1ToWave2Count / wave1Total * 100)
     : null
 
-  // 7. Avg days: wave arrival → all 3 campaigns done
-  const avgDaysWaveToAllDone = avgOf(items.map(({ item, subitems: subs }) => {
-    const en = getLang(subs, 'en')
-    const es = getLang(subs, 'es')
-    const de = getLang(subs, 'de')
-    if (!en?.lp_launched_at || !es?.lp_launched_at || !de?.lp_launched_at) return null
-    const lastLaunch = Math.max(
-      new Date(en.lp_launched_at).getTime(),
-      new Date(es.lp_launched_at).getTime(),
-      new Date(de.lp_launched_at).getTime(),
-    )
-    return daysBetween(item.created_at, new Date(lastLaunch).toISOString())
-  }))
-
-  // 8. New languages launched this week
-  const newLangsThisWeek = allSubs.filter((s: any) =>
-    s.lp_launched_at && s.lp_launched_at >= wsISO && s.lp_launched_at <= weISO
-  ).length
-
-  // 9. Avg languages per active product
-  const activeLangsPerItem = items
-    .map(({ subitems: subs }) => subs.filter((s: any) => s.lp_launched_at && !s.concluded).length)
-    .filter(c => c > 0)
-  const avgLangsPerActive = avgOf(activeLangsPerItem)
-
-  // 10. Deepest winner (most active languages)
-  let deepestWinner: { name: string; count: number } | null = null
-  for (const { item, subitems: subs } of items) {
-    const count = subs.filter((s: any) => s.lp_launched_at && !s.concluded).length
-    if (count > 0 && (!deepestWinner || count > deepestWinner.count)) {
-      deepestWinner = { name: item.name, count }
-    }
-  }
-
-  // 12–14. Winners by size (active = launched + not concluded)
-  const activeCountPerItem = items.map(({ subitems: subs }) =>
-    subs.filter((s: any) => s.lp_launched_at && !s.concluded).length
-  )
-  const smallWinners  = activeCountPerItem.filter(c => c >= 1).length
-  const mediumWinners = activeCountPerItem.filter(c => c >= 8).length
-  const bigWinners    = activeCountPerItem.filter(c => c >= 16).length
-
   return res.json({
-    weekStart: wsISO,
-    weekEnd: weISO,
-    productsTestedFullSet,
-    avgSpotToEnLaunch,
-    avgDaysProofread,
-    avgEnToOthersLaunch,
-    wave1ProofreadQueue,
-    wave2to7ProofreadQueue,
+    weekStart: ws.toISOString(),
+    weekEnd: we.toISOString(),
     wave1Total,
     wave1ToWave2Count,
     pctWave1ToWave2,
-    avgDaysWaveToAllDone,
-    newLangsThisWeek,
-    avgLangsPerActive,
-    deepestWinner,
-    smallWinners,
-    mediumWinners,
-    bigWinners,
   })
 })
 
