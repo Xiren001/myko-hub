@@ -27,9 +27,12 @@ export interface WaveReportData {
     wave1:   { ad: Record<string, number>; web: Record<string, number> }
     waves27: { ad: Record<string, number>; web: Record<string, number> }
   }
+  newLanguagesLaunchedThisWeek: number
 }
 
 const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running', 'ready to launch'])
+const LAUNCHED_STATES = new Set(['launched', 'running'])
+const isLaunchedStatus = (s: string | null | undefined) => LAUNCHED_STATES.has((s ?? '').trim().toLowerCase())
 
 function computeTeamQueue(subs: any[]): { ad: Record<string, number>; web: Record<string, number> } {
   const ad: Record<string, number> = {}
@@ -245,6 +248,18 @@ export async function computeWavesReport(): Promise<WaveReportData> {
     return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
 
+  // "New languages launched this week" — across all products, all waves. Counts subitems whose
+  // ad AND website status are both now launched/running but weren't both at the last cron snapshot.
+  const { data: allSubsForLaunchCounter } = await supabase
+    .from('monday_subitems')
+    .select('ad_status, website_status, last_snapshot_ad_status, last_snapshot_website_status')
+  const newLanguagesLaunchedThisWeek = (allSubsForLaunchCounter ?? []).filter((s: any) => {
+    const nowLaunched = isLaunchedStatus(s.ad_status) && isLaunchedStatus(s.website_status)
+    if (!nowLaunched) return false
+    const wasLaunched = isLaunchedStatus(s.last_snapshot_ad_status) && isLaunchedStatus(s.last_snapshot_website_status)
+    return !wasLaunched
+  }).length
+
   return {
     weekStart: ws.toISOString(),
     weekEnd:   we.toISOString(),
@@ -269,5 +284,6 @@ export async function computeWavesReport(): Promise<WaveReportData> {
     activeWinnerCount,
     productSalesUpdatedAt,
     teamQueue,
+    newLanguagesLaunchedThisWeek,
   }
 }

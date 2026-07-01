@@ -92,8 +92,40 @@ export async function runWaveReportSnapshot(): Promise<void> {
     } else {
       console.log(`[wave-report-cron] snapshot saved for week ${weekStart}`)
     }
+
+    await resetLaunchCounterBaseline()
   } catch (err) {
     console.error('[wave-report-cron] error:', err)
+  }
+}
+
+// Captures current ad/website status as the new baseline so "New languages launched
+// this week" starts counting from 0 again until the next status change.
+async function resetLaunchCounterBaseline(): Promise<void> {
+  const { data: subs, error: fetchError } = await supabase
+    .from('monday_subitems')
+    .select('id, ad_status, website_status')
+
+  if (fetchError) {
+    console.error('[wave-report-cron] baseline fetch error:', fetchError.message)
+    return
+  }
+  if (!subs || subs.length === 0) return
+
+  const updates = subs.map((s: any) => ({
+    id: s.id,
+    last_snapshot_ad_status: s.ad_status,
+    last_snapshot_website_status: s.website_status,
+  }))
+
+  const { error: resetError } = await supabase
+    .from('monday_subitems')
+    .upsert(updates, { onConflict: 'id' })
+
+  if (resetError) {
+    console.error('[wave-report-cron] baseline reset error:', resetError.message)
+  } else {
+    console.log(`[wave-report-cron] baseline reset for ${updates.length} subitems`)
   }
 }
 

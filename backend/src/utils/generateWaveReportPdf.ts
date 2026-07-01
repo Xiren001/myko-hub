@@ -102,6 +102,11 @@ function waves27Metrics(d: WaveReportData): MetricRow[] {
       desc:  'The single Waves 2–7 product live in the highest number of languages.',
     },
     {
+      label: 'New Languages Launched This Week',
+      value: String(d.newLanguagesLaunchedThisWeek),
+      desc:  'Across all products, all waves — subitems whose ad and website status are both now launched/running but weren\'t both at the last weekly snapshot.',
+    },
+    {
       label: 'Active Winners — Small (1–7 langs)',
       value: String(d.activeWinners.small),
       desc:  'Products live in 1–7 language markets simultaneously.',
