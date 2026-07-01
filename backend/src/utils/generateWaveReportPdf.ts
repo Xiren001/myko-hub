@@ -131,7 +131,7 @@ function waves27Metrics(d: WaveReportData): MetricRow[] {
       label: 'Avg Revenue per Active Winner',
       value: d.avgRevenuePerWinner !== null ? formatCurrency(d.avgRevenuePerWinner) : '—',
       note:  d.activeWinnerCount > 0 ? `${d.activeWinnerCount} products` : undefined,
-      desc:  'Total product revenue divided by number of active products, from the Shopify product-title CSV.',
+      desc:  'Revenue for Waves 2–7 products with a language whose ad + website status are both running or launched, divided by their count, from the Shopify product-title CSV.',
     },
     {
       label: 'Arriving to New Wave — Overall Avg',

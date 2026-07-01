@@ -137,7 +137,7 @@ export async function computeWavesReport(): Promise<WaveReportData> {
   for (const w of (waves27 ?? [])) waveIdMap[(w as any).wave_number] = (w as any).id
   const waveIds27 = Object.values(waveIdMap)
 
-  const [waveSubsResults, waveItemCountResults, subsWithItemsResult, teamQueueSubs27Result] = await Promise.all([
+  const [waveSubsResults, waveItemCountResults, subsWithItemsResult, teamQueueSubs27Result, runningItemsResult] = await Promise.all([
     Promise.all(
       [2, 3, 4, 5, 6, 7].map(wn =>
         waveIdMap[wn]
@@ -164,6 +164,13 @@ export async function computeWavesReport(): Promise<WaveReportData> {
       ? supabase.from('monday_subitems')
           .select('ad_status, website_status, product_name, monday_items!inner(wave_id)')
           .in('monday_items.wave_id', waveIds27)
+      : Promise.resolve({ data: [] }),
+    waveIds27.length > 0
+      ? supabase.from('monday_subitems')
+          .select('monday_items!inner(id, name, wave_id)')
+          .in('monday_items.wave_id', waveIds27)
+          .or('ad_status.ilike.running,ad_status.ilike.launched')
+          .or('website_status.ilike.running,website_status.ilike.launched')
       : Promise.resolve({ data: [] }),
   ])
 
@@ -212,7 +219,7 @@ export async function computeWavesReport(): Promise<WaveReportData> {
   // Sales data
   const [{ data: langSalesData }, { data: productSalesData }] = await Promise.all([
     supabase.from('language_sales').select('lang_code, net_sales, cogs, updated_at'),
-    supabase.from('product_sales').select('net_sales, updated_at'),
+    supabase.from('product_sales').select('product_title, net_sales, updated_at'),
   ])
   const totalLaunches      = langSalesData?.length ?? 0
   const profitableLaunches = (langSalesData ?? []).filter((r: any) => r.net_sales > r.cogs).length
@@ -220,7 +227,16 @@ export async function computeWavesReport(): Promise<WaveReportData> {
     ? Math.round((profitableLaunches / totalLaunches) * 100)
     : null
   const salesDataUpdatedAt    = langSalesData?.[0]?.updated_at ?? null
-  const productSalesRows      = productSalesData ?? []
+
+  // Only Waves 2–7 products with at least one language whose ad + website status are both running/launched count as "active winners"
+  const runningProductNames = new Set(
+    ((runningItemsResult as any).data ?? [])
+      .map((s: any) => (s as any).monday_items?.name?.trim().toLowerCase())
+      .filter(Boolean)
+  )
+  const productSalesRows      = (productSalesData ?? []).filter((r: any) =>
+    runningProductNames.has(r.product_title?.trim().toLowerCase())
+  )
   const totalProductRevenue   = productSalesRows.reduce((sum, r: any) => sum + (r.net_sales ?? 0), 0)
   const activeWinnerCount     = productSalesRows.length
   const avgRevenuePerWinner   = activeWinnerCount > 0
