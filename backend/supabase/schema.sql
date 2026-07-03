@@ -37,7 +37,7 @@ create table if not exists public.settings (
   tool_approval_threshold numeric default 100,
   payment_approval_threshold numeric default 500,
   updated_at timestamptz default now(),
-  approver_permissions jsonb default '{"dashboard":true,"jewelry_tracker":true,"proofread_queue":true,"mistake_log":true,"monthly_planner":true,"decision_rights":true,"settings":false}'::jsonb,
+  approver_permissions jsonb default '{"dashboard":true,"jewelry_tracker":true,"proofread_queue":true,"settings":false}'::jsonb,
   constraint single_row check (id = 1)
 );
 
@@ -74,34 +74,6 @@ create table if not exists public.qa_items (
   notes text,
   completed_at timestamptz,
   unique(build_id, item_key)
-);
-
--- Mistakes
-create table if not exists public.mistakes (
-  id uuid primary key default gen_random_uuid(),
-  date date,
-  product_name text,
-  category text,
-  caught_where text,
-  description text,
-  root_cause text,
-  sop_updated boolean default false,
-  notes text,
-  month_year date,
-  created_at timestamptz default now()
-);
-
--- Decision rights
-create table if not exists public.decision_rights (
-  id uuid primary key default gen_random_uuid(),
-  section text not null default '',
-  decision text not null,
-  myko text not null default '—',
-  abigel text not null default '—',
-  owner text not null default '—',
-  sort_order int default 0,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
 );
 
 -- Proof products
@@ -143,15 +115,6 @@ create table if not exists public.report_narratives (
   unique(type, week_number, month_year)
 );
 
--- Planner notes
-create table if not exists public.planner_notes (
-  id uuid primary key default gen_random_uuid(),
-  date date not null unique,
-  notes text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
 -- ============================================================
 -- Row Level Security
 -- ============================================================
@@ -160,9 +123,7 @@ alter table public.profiles enable row level security;
 alter table public.settings enable row level security;
 alter table public.builds enable row level security;
 alter table public.qa_items enable row level security;
-alter table public.mistakes enable row level security;
 alter table public.report_narratives enable row level security;
-alter table public.planner_notes enable row level security;
 alter table public.proof_products enable row level security;
 alter table public.proof_corrections enable row level security;
 
@@ -196,27 +157,12 @@ create policy "qa_insert" on public.qa_items for insert with check (public.curre
 create policy "qa_update" on public.qa_items for update using (public.current_user_role() = 'admin');
 create policy "qa_delete" on public.qa_items for delete using (public.current_user_role() = 'admin');
 
--- Mistakes: everyone reads; only admin writes
-create policy "mistakes_select" on public.mistakes for select using (auth.uid() is not null);
-create policy "mistakes_insert" on public.mistakes for insert with check (public.current_user_role() = 'admin');
-create policy "mistakes_update" on public.mistakes for update using (public.current_user_role() = 'admin');
-create policy "mistakes_delete" on public.mistakes for delete using (public.current_user_role() = 'admin');
-
 -- Report narratives: everyone reads; admin + approver write
 create policy "narratives_select" on public.report_narratives for select using (auth.uid() is not null);
 create policy "narratives_insert" on public.report_narratives for insert with check (
   public.current_user_role() in ('admin', 'approver')
 );
 create policy "narratives_update" on public.report_narratives for update using (
-  public.current_user_role() in ('admin', 'approver')
-);
-
--- Planner notes: everyone reads; admin + approver write
-create policy "planner_select" on public.planner_notes for select using (auth.uid() is not null);
-create policy "planner_insert" on public.planner_notes for insert with check (
-  public.current_user_role() in ('admin', 'approver')
-);
-create policy "planner_update" on public.planner_notes for update using (
   public.current_user_role() in ('admin', 'approver')
 );
 

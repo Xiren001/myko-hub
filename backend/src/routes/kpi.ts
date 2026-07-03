@@ -15,10 +15,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   const { data: builds, error: bErr } = await buildsQuery
   if (bErr) return res.status(500).json({ error: bErr.message })
 
-  let mistakesQuery = supabase.from('mistakes').select('category')
-  if (ms && me) mistakesQuery = mistakesQuery.gte('month_year', ms).lte('month_year', me)
-  const { data: mistakes } = await mistakesQuery
-
   const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).single()
 
   const enriched = (builds ?? []).map(enrichBuild)
@@ -40,8 +36,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
         : 0)
       return days > (settings?.proof_target_days ?? 3)
     }).length,
-    mistakesCount: (mistakes ?? []).length,
-    translationFlags: (mistakes ?? []).filter(m => m.category === 'Translation / proofreading').length,
     targets: settings ?? {},
     phaseBreakdown: {
       building: enriched.filter(b => b.phase === 'building').length,
