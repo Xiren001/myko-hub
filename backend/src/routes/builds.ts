@@ -3,16 +3,6 @@ import { supabase } from '../supabase'
 import { authenticate, requireAdmin, requireManagement, AuthRequest } from '../middleware/auth'
 import { enrichBuild, monthStart, monthEnd } from '../utils/calculations'
 
-async function assertFunnelWriteOrAdmin(req: AuthRequest, res: Response, buildId?: string): Promise<boolean> {
-  const role = req.userRole ?? ''
-  if (role === 'admin') return true
-  if (role !== 'website') { res.status(403).json({ error: 'Insufficient permissions' }); return false }
-  if (!buildId) { res.status(403).json({ error: 'Insufficient permissions' }); return false }
-  const { data } = await supabase.from('builds').select('type').eq('id', buildId).single()
-  if (!data || data.type !== 'funnel') { res.status(403).json({ error: 'Insufficient permissions' }); return false }
-  return true
-}
-
 // Sync a proof_products row to match a build's current state.
 // Called whenever a jewelry non-EN build that has into_proofread changes.
 async function syncProofProduct(
@@ -342,20 +332,14 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   res.json((data ?? []).map(enrichBuild))
 })
 
-router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
-  const role = req.userRole ?? ''
-  const isManagement = role === 'admin' || role === 'management'
-  const isWebsiteFunnel = role === 'website' && req.body.type === 'funnel'
-  if (!isManagement && !isWebsiteFunnel) return res.status(403).json({ error: 'Insufficient permissions' })
+router.post('/', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.from('builds').insert(req.body).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
   res.status(201).json(enrichBuild(data))
 })
 
-router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
-
+router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   // Capture state before update so we can detect what changed
   const { data: before } = await supabase
     .from('builds')
@@ -375,9 +359,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   res.json(enrichBuild(data))
 })
 
-router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  if (!await assertFunnelWriteOrAdmin(req, res, req.params.id)) return
-
+router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   // Fetch build before deleting so we can cascade to proof_products
   const { data: build } = await supabase
     .from('builds')

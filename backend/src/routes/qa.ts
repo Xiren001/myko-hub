@@ -14,11 +14,6 @@ const QA_ITEMS = [
   { key: 'jewelry_ctas', section: 'jewelry', label: 'Add-to-cart, all CTAs/links and the sticky mobile buy-bar work' },
   { key: 'jewelry_sizing', section: 'jewelry', label: 'Sizing/ring-size guide present and correct for the locale' },
   { key: 'jewelry_claims', section: 'jewelry', label: 'Material/hallmark claims accurate; reviews & secure-checkout badges shown' },
-  // Funnel — Funnelish 2-page funnel
-  { key: 'funnel_advertorial_loads', section: 'funnel', label: 'Advertorial page loads fast; headline/images render correctly in target language' },
-  { key: 'funnel_sales_page', section: 'funnel', label: 'Sales page: all sections, CTAs, and price points correct for geo/currency' },
-  { key: 'funnel_redirect', section: 'funnel', label: 'Sales-page CTA → Shopify checkout redirect fires correctly; cart is not empty and variant is correct' },
-  { key: 'funnel_checkout_test', section: 'funnel', label: 'End-to-end test: advertorial → sales → Shopify checkout → order confirmation' },
   // Localization
   { key: 'loc_translation_reviewed', section: 'localization', label: 'Translation reviewed by proofreader; no machine-translation artifacts' },
   { key: 'loc_currency_format', section: 'localization', label: 'Currency symbol and number format match the locale' },

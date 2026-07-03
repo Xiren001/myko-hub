@@ -42,9 +42,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     }).length,
     mistakesCount: (mistakes ?? []).length,
     translationFlags: (mistakes ?? []).filter(m => m.category === 'Translation / proofreading').length,
-    funnelRedirectIssues: (mistakes ?? []).filter(
-      m => m.category === 'Funnelish → Shopify checkout redirect (wrong/empty cart · lost variant)'
-    ).length,
     targets: settings ?? {},
     phaseBreakdown: {
       building: enriched.filter(b => b.phase === 'building').length,

@@ -37,16 +37,16 @@ create table if not exists public.settings (
   tool_approval_threshold numeric default 100,
   payment_approval_threshold numeric default 500,
   updated_at timestamptz default now(),
-  approver_permissions jsonb default '{"dashboard":true,"jewelry_tracker":true,"funnel_tracker":true,"proofread_queue":true,"mistake_log":true,"monthly_planner":true,"decision_rights":true,"settings":false}'::jsonb,
+  approver_permissions jsonb default '{"dashboard":true,"jewelry_tracker":true,"proofread_queue":true,"mistake_log":true,"monthly_planner":true,"decision_rights":true,"settings":false}'::jsonb,
   constraint single_row check (id = 1)
 );
 
 insert into public.settings (id) values (1) on conflict do nothing;
 
--- Builds (jewelry + funnel unified)
+-- Builds
 create table if not exists public.builds (
   id uuid primary key default gen_random_uuid(),
-  type text not null check (type in ('jewelry', 'funnel')),
+  type text not null check (type in ('jewelry')),
   week_number int check (week_number between 1 and 4),
   month_year date,
   product_name text not null,

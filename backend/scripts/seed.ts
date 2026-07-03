@@ -44,7 +44,6 @@ async function seedBuilds(wb: XLSX.WorkBook) {
 
   for (const { sheetName, type } of [
     { sheetName: 'Jewelry Tracker', type: 'jewelry' },
-    { sheetName: 'Funnel Tracker', type: 'funnel' },
   ]) {
     const ws = wb.Sheets[sheetName]
     if (!ws) continue
