@@ -153,10 +153,6 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
 
 // Payment overview — same data source as proofread-queue, with payment fields added
 router.get('/payment-overview', authenticate, requireManagement, async (req: AuthRequest, res: Response) => {
-  const { month } = req.query
-  const ms = month && typeof month === 'string' ? monthStart(month) : undefined
-  const me = month && typeof month === 'string' ? monthEnd(month) : undefined
-
   // ── 1. Builds (same query as proofread-queue) ─────────────────────────
   let bq = supabase
     .from('builds')
@@ -165,12 +161,6 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     .neq('language', 'EN')
 
   if (req.userLang) bq = bq.eq('language', req.userLang)
-
-  if (ms && me) {
-    bq = bq.or(`proof_end.is.null,and(proof_end.gte.${ms},proof_end.lte.${me})`)
-  } else {
-    bq = bq.is('proof_end', null).or('outcome.is.null,outcome.neq.stopped')
-  }
 
   const { data: buildsData, error } = await bq
   if (error) return res.status(500).json({ error: error.message })
@@ -201,14 +191,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     })
   }
 
-  // ── 3. Month-filtered proof_products for orphan display ────────────────
-  const ppMonthFiltered = (allPpData ?? []).filter(pp => {
-    if (!pp.done) return true
-    if (ms && me) return pp.month_year === (typeof month === 'string' ? month : '')
-    return false
-  })
-
-  // ── 4. Deduplicate: orphans are proof_products not covered by a build ──
+  // ── 3. Deduplicate: orphans are proof_products not covered by a build ──
   const buildKeys = new Set(
     enrichedBuilds.map(b => `${String(b.product_name).toLowerCase()}|${b.language ?? ''}`)
   )
@@ -222,7 +205,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     return 'active'
   }
 
-  const orphans = ppMonthFiltered
+  const orphans = (allPpData ?? [])
     .filter(pp => !buildKeys.has(`${(pp.product_name as string).toLowerCase()}|${pp.language ?? ''}`))
     .map(pp => ({
       id:               `pp-${pp.id}`,
