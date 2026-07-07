@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { supabase } from '../supabase'
 import { computeWavesReport } from '../utils/computeWavesReport'
+import { getDateTimeInTimezone } from '../utils/timezone'
 
 export interface CronSchedule {
   day:      number  // 0=Sun … 6=Sat
@@ -28,43 +29,12 @@ export async function getCronSchedule(): Promise<CronSchedule> {
   }
 }
 
-function getCurrentInTimezone(tz: string): { day: number; hour: number; minute: number } {
-  const now   = new Date()
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    weekday:  'short',
-    hour:     '2-digit',
-    minute:   '2-digit',
-    hour12:   false,
-  }).formatToParts(now)
-
-  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
-  const DAY: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-
-  return {
-    day:    DAY[get('weekday')] ?? 0,
-    hour:   parseInt(get('hour'))   || 0,
-    minute: parseInt(get('minute')) || 0,
-  }
-}
-
 function weekBoundsInTimezone(tz: string): { weekStart: string; weekEnd: string } {
-  const now = new Date()
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
-  }).formatToParts(now)
-  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
-  const DAY: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  const now = getDateTimeInTimezone(tz)
 
-  const year  = parseInt(get('year'))
-  const month = parseInt(get('month')) - 1
-  const date  = parseInt(get('day'))
-  const dow   = DAY[get('weekday')] ?? 0
-
-  const mondayOffset = dow === 0 ? -6 : 1 - dow
-  const mon = new Date(year, month, date + mondayOffset)
-  const sun = new Date(year, month, date + mondayOffset + 6)
+  const mondayOffset = now.weekday === 0 ? -6 : 1 - now.weekday
+  const mon = new Date(now.year, now.month, now.dayOfMonth + mondayOffset)
+  const sun = new Date(now.year, now.month, now.dayOfMonth + mondayOffset + 6)
 
   const pad = (n: number) => String(n).padStart(2, '0')
   const fmt = (d: Date) =>
@@ -104,7 +74,7 @@ export async function runWaveReportSnapshot(): Promise<void> {
 async function resetLaunchCounterBaseline(): Promise<void> {
   const { data: subs, error: fetchError } = await supabase
     .from('monday_subitems')
-    .select('id, ad_status, website_status')
+    .select('id, item_id, name, ad_status, website_status')
 
   if (fetchError) {
     console.error('[wave-report-cron] baseline fetch error:', fetchError.message)
@@ -112,8 +82,12 @@ async function resetLaunchCounterBaseline(): Promise<void> {
   }
   if (!subs || subs.length === 0) return
 
+  // item_id/name are NOT NULL columns with no default — Postgres builds a full row to check
+  // for conflicts, so an upsert missing them fails outright even though every row already exists.
   const updates = subs.map((s: any) => ({
     id: s.id,
+    item_id: s.item_id,
+    name: s.name,
     last_snapshot_ad_status: s.ad_status,
     last_snapshot_website_status: s.website_status,
   }))
@@ -134,8 +108,8 @@ export function startWaveReportCron(): void {
   cron.schedule('* * * * *', async () => {
     try {
       const schedule = await getCronSchedule()
-      const now = getCurrentInTimezone(schedule.timezone)
-      if (now.day === schedule.day && now.hour === schedule.hour && now.minute === schedule.minute) {
+      const now = getDateTimeInTimezone(schedule.timezone)
+      if (now.weekday === schedule.day && now.hour === schedule.hour && now.minute === schedule.minute) {
         await runWaveReportSnapshot()
       }
     } catch (err) {

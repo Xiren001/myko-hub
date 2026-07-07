@@ -65,15 +65,23 @@ const NEW_WAVE_LANGS: Record<number, string[]> = {
   7: ['slovakia', 'sk', 'slovak', 'slovenia', 'si', 'slovenian', 'sl', 'romania', 'ro', 'romanian'],
 }
 
-export async function computeWavesReport(): Promise<WaveReportData> {
-  // Current week bounds (Mon–Sun)
-  const ws = new Date()
-  const day = ws.getDay()
-  ws.setDate(ws.getDate() + (day === 0 ? -6 : 1 - day))
-  ws.setHours(0, 0, 0, 0)
-  const we = new Date(ws)
-  we.setDate(we.getDate() + 6)
-  we.setHours(23, 59, 59, 999)
+export async function computeWavesReport(period: 'week' | 'month' = 'week'): Promise<WaveReportData> {
+  // Current period bounds — Mon–Sun for 'week', 1st–last day of month for 'month'
+  let ws: Date
+  let we: Date
+  if (period === 'month') {
+    const now = new Date()
+    ws = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+    we = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+  } else {
+    ws = new Date()
+    const day = ws.getDay()
+    ws.setDate(ws.getDate() + (day === 0 ? -6 : 1 - day))
+    ws.setHours(0, 0, 0, 0)
+    we = new Date(ws)
+    we.setDate(we.getDate() + 6)
+    we.setHours(23, 59, 59, 999)
+  }
 
   const { data: waves12 } = await supabase
     .from('monday_waves').select('id, wave_number').in('wave_number', [1, 2])
@@ -264,15 +272,20 @@ export async function computeWavesReport(): Promise<WaveReportData> {
     return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
 
-  // "New languages launched this week" — across all products, all waves. Counts subitems whose
+  // "New languages launched this week/month" — across all products, all waves. Counts subitems whose
   // ad AND website status are both now launched/running but weren't both at the last cron snapshot.
+  // Week and month views track independent baselines so a monthly cron doesn't get reset by the
+  // weekly one (and vice versa).
+  const [baselineAdCol, baselineWebCol] = period === 'month'
+    ? ['last_monthly_snapshot_ad_status', 'last_monthly_snapshot_website_status']
+    : ['last_snapshot_ad_status', 'last_snapshot_website_status']
   const { data: allSubsForLaunchCounter } = await supabase
     .from('monday_subitems')
-    .select('ad_status, website_status, last_snapshot_ad_status, last_snapshot_website_status')
+    .select(`ad_status, website_status, ${baselineAdCol}, ${baselineWebCol}`)
   const newLanguagesLaunchedThisWeek = (allSubsForLaunchCounter ?? []).filter((s: any) => {
     const nowLaunched = isLaunchedStatus(s.ad_status) && isLaunchedStatus(s.website_status)
     if (!nowLaunched) return false
-    const wasLaunched = isLaunchedStatus(s.last_snapshot_ad_status) && isLaunchedStatus(s.last_snapshot_website_status)
+    const wasLaunched = isLaunchedStatus(s[baselineAdCol]) && isLaunchedStatus(s[baselineWebCol])
     return !wasLaunched
   }).length
 

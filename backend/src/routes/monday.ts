@@ -5,6 +5,7 @@ import { enqueueNotification } from '../jobs/notificationScheduler'
 import { computeWavesReport } from '../utils/computeWavesReport'
 import { generateWaveReportPdf } from '../utils/generateWaveReportPdf'
 import { runWaveReportSnapshot, getCronSchedule } from '../jobs/waveReportCron'
+import { runWaveReportMonthlySnapshot, getMonthlyCronSchedule } from '../jobs/waveReportMonthlyCron'
 
 const router = Router()
 
@@ -870,6 +871,113 @@ router.put('/wave-report-cron', authenticate, requireAdmin, async (req: AuthRequ
 
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ ok: true, day, hour, minute, timezone })
+})
+
+// ── GET /api/monday/waves-monthly-report ──────────────────────────────────
+router.get('/waves-monthly-report', authenticate, async (req: AuthRequest, res: Response) => {
+  const { monthStart: monthStartParam } = req.query
+
+  // If a specific month is requested, check for a saved snapshot first
+  if (monthStartParam && typeof monthStartParam === 'string') {
+    const { data: snap } = await supabase
+      .from('wave_report_monthly_snapshots')
+      .select('data, month_start, month_end')
+      .eq('month_start', monthStartParam)
+      .maybeSingle()
+
+    if (snap) {
+      return res.json({ ...(snap.data as object), isSnapshot: true })
+    }
+  }
+
+  // Fall back to live computation
+  const data = await computeWavesReport('month')
+  return res.json({ ...data, isSnapshot: false })
+})
+
+// ── GET /api/monday/wave-report-monthly-snapshots ─────────────────────────
+// List all available snapshot months (newest first)
+router.get('/wave-report-monthly-snapshots', authenticate, async (_req: AuthRequest, res: Response) => {
+  const { data, error } = await supabase
+    .from('wave_report_monthly_snapshots')
+    .select('month_start, month_end, created_at')
+    .order('month_start', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json(data ?? [])
+})
+
+// ── POST /api/monday/wave-report-monthly-snapshot ─────────────────────────
+// Manually trigger a snapshot for the current month (admin only)
+router.post('/wave-report-monthly-snapshot', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    await runWaveReportMonthlySnapshot()
+    return res.json({ ok: true })
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+})
+
+// ── GET /api/monday/wave-report-monthly-snapshot/:monthStart/pdf ──────────
+router.get('/wave-report-monthly-snapshot/:monthStart/pdf', authenticate, async (req: AuthRequest, res: Response) => {
+  const { monthStart } = req.params
+
+  let reportData: any
+  let isSnapshot = false
+
+  // Try snapshot first
+  const { data: snap } = await supabase
+    .from('wave_report_monthly_snapshots')
+    .select('data')
+    .eq('month_start', monthStart)
+    .maybeSingle()
+
+  if (snap) {
+    reportData  = snap.data
+    isSnapshot  = true
+  } else {
+    // Fall back to live data
+    reportData = await computeWavesReport('month')
+  }
+
+  try {
+    const pdfBuffer = await generateWaveReportPdf(reportData, isSnapshot, 'month')
+    const filename  = `waves-report-${monthStart}.pdf`
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length':      String(pdfBuffer.length),
+    })
+    return res.send(pdfBuffer)
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message })
+  }
+})
+
+// ── GET /api/monday/wave-report-monthly-cron ──────────────────────────────
+router.get('/wave-report-monthly-cron', authenticate, async (_req: AuthRequest, res: Response) => {
+  const schedule = await getMonthlyCronSchedule()
+  return res.json(schedule)
+})
+
+// ── PUT /api/monday/wave-report-monthly-cron ──────────────────────────────
+router.put('/wave-report-monthly-cron', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { dayOfMonth, hour, minute, timezone } = req.body
+  if (
+    typeof dayOfMonth !== 'number'  || dayOfMonth < 1 || dayOfMonth > 28  ||
+    typeof hour !== 'number'        || hour < 0       || hour > 23       ||
+    typeof minute !== 'number'      || minute < 0     || minute > 59     ||
+    typeof timezone !== 'string'    || !timezone.trim()
+  ) {
+    return res.status(400).json({ error: 'Invalid schedule fields' })
+  }
+
+  const value = JSON.stringify({ dayOfMonth, hour, minute, timezone: timezone.trim() })
+  const { error } = await supabase
+    .from('proof_notification_settings')
+    .upsert({ key: 'wave_report_monthly_cron', value }, { onConflict: 'key' })
+
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true, dayOfMonth, hour, minute, timezone })
 })
 
 export default router

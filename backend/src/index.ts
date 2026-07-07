@@ -18,6 +18,7 @@ import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 import { startNotificationScheduler } from './jobs/notificationScheduler'
 import { startWaveReportCron } from './jobs/waveReportCron'
+import { startWaveReportMonthlyCron } from './jobs/waveReportMonthlyCron'
 
 const app = express()
 
@@ -46,4 +47,5 @@ app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`)
   startNotificationScheduler()
   startWaveReportCron()
+  startWaveReportMonthlyCron()
 })

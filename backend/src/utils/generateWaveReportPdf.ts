@@ -78,7 +78,8 @@ function wave1Metrics(d: WaveReportData): MetricRow[] {
   ]
 }
 
-function waves27Metrics(d: WaveReportData): MetricRow[] {
+function waves27Metrics(d: WaveReportData, period: 'week' | 'month'): MetricRow[] {
+  const periodLabel = period === 'month' ? 'Month' : 'Week'
   const validAvgs = d.newWaveCampaignAvgDays.map(r => r.avg).filter((v): v is number => v !== null)
   const overall = validAvgs.length > 0
     ? Math.round((validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length) * 10) / 10
@@ -102,9 +103,9 @@ function waves27Metrics(d: WaveReportData): MetricRow[] {
       desc:  'The single Waves 2–7 product live in the highest number of languages.',
     },
     {
-      label: 'New Languages Launched This Week',
+      label: `New Languages Launched This ${periodLabel}`,
       value: String(d.newLanguagesLaunchedThisWeek),
-      desc:  'Across all products, all waves — subitems whose ad and website status are both now launched/running but weren\'t both at the last weekly snapshot.',
+      desc:  `Across all products, all waves — subitems whose ad and website status are both now launched/running but weren't both at the last ${period}ly snapshot.`,
     },
     {
       label: 'Active Winners — Small (1–7 langs)',
@@ -146,12 +147,17 @@ function waves27Metrics(d: WaveReportData): MetricRow[] {
   ]
 }
 
-export function generateWaveReportPdf(data: WaveReportData, isSnapshot: boolean): Promise<Buffer> {
+export function generateWaveReportPdf(
+  data: WaveReportData,
+  isSnapshot: boolean,
+  period: 'week' | 'month' = 'week'
+): Promise<Buffer> {
+  const reportTitle = period === 'month' ? 'Waves Monthly Report' : 'Waves Weekly Report'
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 0, info: {
-      Title:   `Waves Weekly Report — ${weekRangeLabel(data)}`,
+      Title:   `${reportTitle} — ${weekRangeLabel(data)}`,
       Author:  'Myko Hub',
-      Subject: 'Waves Weekly Report',
+      Subject: reportTitle,
     }})
     const chunks: Buffer[] = []
     doc.on('data', (c: Buffer) => chunks.push(c))
@@ -164,7 +170,7 @@ export function generateWaveReportPdf(data: WaveReportData, isSnapshot: boolean)
     doc.rect(0, 0, PAGE_W, 110).fill(C.ink)
 
     doc.font('Helvetica-Bold').fontSize(20).fillColor(C.white)
-       .text('WAVES WEEKLY REPORT', MARGIN, 28, { width: BODY_W })
+       .text(reportTitle.toUpperCase(), MARGIN, 28, { width: BODY_W })
 
     doc.font('Helvetica').fontSize(11).fillColor('#94a3b8')
        .text(weekRangeLabel(data), MARGIN, 56, { width: BODY_W })
@@ -295,7 +301,7 @@ export function generateWaveReportPdf(data: WaveReportData, isSnapshot: boolean)
     y += 4
 
     sectionHeader('Waves 2–7')
-    for (const row of waves27Metrics(data)) metricRow(row)
+    for (const row of waves27Metrics(data, period)) metricRow(row)
     y += 4
 
     teamQueueSection()
@@ -304,7 +310,7 @@ export function generateWaveReportPdf(data: WaveReportData, isSnapshot: boolean)
     const footerY = PAGE_H - 36
     doc.rect(0, footerY - 1, PAGE_W, 0.5).fill(C.rule)
     doc.font('Helvetica').fontSize(8).fillColor(C.faint)
-       .text('Myko Hub — Waves Weekly Report', MARGIN, footerY + 6, { width: BODY_W, align: 'center' })
+       .text(`Myko Hub — ${reportTitle}`, MARGIN, footerY + 6, { width: BODY_W, align: 'center' })
 
     doc.end()
   })
