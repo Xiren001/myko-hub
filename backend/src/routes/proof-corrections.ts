@@ -8,7 +8,7 @@ const router = Router()
 // GET /products
 router.get('/products', authenticate, async (req: AuthRequest, res: Response) => {
   let q = supabase.from('proof_products').select('*').order('language').order('product_name')
-  if (req.userLang) q = q.eq('language', req.userLang)
+  if (req.userLangs?.length) q = q.in('language', req.userLangs)
 
   const { data, error } = await q
   if (error) return res.status(500).json({ error: error.message })
@@ -82,10 +82,10 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
   if (updateData.website_done === true) updateData.website_done_at = _now
   if (updateData.ads_done === true) updateData.ads_done_at = _now
 
-  // Lang proofreaders can only write to their own language
-  if (req.userLang) {
+  // Lang proofreaders can only write to their assigned languages
+  if (req.userLangs?.length) {
     const { data: existing } = await supabase.from('proof_products').select('language').eq('id', req.params.id).single()
-    if (existing?.language !== req.userLang) return res.status(403).json({ error: 'Language access denied' })
+    if (!existing?.language || !req.userLangs.includes(existing.language)) return res.status(403).json({ error: 'Language access denied' })
   }
 
   // Auto-compute done = website_done AND ads_done when a split flag is updated

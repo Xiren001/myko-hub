@@ -5,7 +5,7 @@ import { supabase } from '../supabase'
 export interface AuthRequest extends Request {
   userId?: string
   userRole?: string
-  userLang?: string   // set for proofreader_XX roles; uppercase e.g. "ES"
+  userLangs?: string[]   // set for proofreader_XX roles; primary lang (uppercase, e.g. "ES") + any extra_languages
 }
 
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
@@ -28,17 +28,18 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 
   const { data: profile } = await client
     .from('profiles')
-    .select('role')
+    .select('role, extra_languages')
     .eq('id', user.id)
     .single()
 
   req.userId = user.id
   const rawRole: string = profile?.role ?? 'website'
-  // proofreader_es → role='proofreader', lang='ES'
+  // proofreader_es → role='proofreader', langs=['ES', ...extra_languages]
   const langMatch = rawRole.match(/^proofreader_([a-z]+)$/i)
   if (langMatch) {
     req.userRole = 'proofreader'
-    req.userLang = langMatch[1].toUpperCase()
+    const extra = ((profile?.extra_languages as string[] | null) ?? []).map(l => l.toUpperCase())
+    req.userLangs = [...new Set([langMatch[1].toUpperCase(), ...extra])]
   } else {
     req.userRole = rawRole
   }

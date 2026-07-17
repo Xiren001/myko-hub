@@ -28,7 +28,7 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
-  res.json({ userId: req.userId, userRole: req.userRole, userLang: req.userLang ?? null })
+  res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null })
 })
 
 app.use('/api/builds', buildsRouter)

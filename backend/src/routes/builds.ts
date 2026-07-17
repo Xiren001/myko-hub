@@ -115,7 +115,7 @@ router.get('/proofread-queue', authenticate, async (req: AuthRequest, res: Respo
     .select('*')
     .or('language.is.null,language.neq.EN')
 
-  if (req.userLang) ppq = ppq.eq('language', req.userLang)
+  if (req.userLangs?.length) ppq = ppq.in('language', req.userLangs)
 
   if (ms && me) {
     const monthStr = typeof month === 'string' ? month : ''
@@ -160,7 +160,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     .not('into_proofread', 'is', null)
     .or('language.is.null,language.neq.EN')
 
-  if (req.userLang) bq = bq.eq('language', req.userLang)
+  if (req.userLangs?.length) bq = bq.in('language', req.userLangs)
 
   const { data: buildsData, error } = await bq
   if (error) return res.status(500).json({ error: error.message })
@@ -171,7 +171,7 @@ router.get('/payment-overview', authenticate, requireManagement, async (req: Aut
     .from('proof_products')
     .select('*')
     .or('language.is.null,language.neq.EN')
-  if (req.userLang) allPpq = allPpq.eq('language', req.userLang)
+  if (req.userLangs?.length) allPpq = allPpq.in('language', req.userLangs)
   const { data: allPpData } = await allPpq
 
   // Build payment map keyed by product_name|language

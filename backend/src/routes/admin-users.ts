@@ -24,15 +24,20 @@ router.get('/users', authenticate, requireAdmin, async (_req: AuthRequest, res: 
   if (error) return res.status(500).json({ error: error.message })
 
   const ids = data.users.map(u => u.id)
-  const { data: profiles } = await supabase.from('profiles').select('id, role').in('id', ids)
+  const { data: profiles } = await supabase.from('profiles').select('id, role, extra_languages').in('id', ids)
 
   const roleMap: Record<string, string> = {}
-  for (const p of profiles ?? []) roleMap[p.id] = p.role
+  const extraLangMap: Record<string, string[]> = {}
+  for (const p of profiles ?? []) {
+    roleMap[p.id] = p.role
+    extraLangMap[p.id] = (p.extra_languages as string[] | null) ?? []
+  }
 
   res.json(data.users.map(u => ({
     id: u.id,
     email: u.email,
     role: roleMap[u.id] ?? 'viewer',
+    extra_languages: extraLangMap[u.id] ?? [],
     created_at: u.created_at,
   })))
 })
@@ -54,7 +59,27 @@ router.post('/users', authenticate, requireAdmin, async (req: AuthRequest, res: 
 
   await supabase.from('profiles').update({ role }).eq('id', created.user.id)
 
-  res.status(201).json({ id: created.user.id, email: created.user.email, role })
+  res.status(201).json({ id: created.user.id, email: created.user.email, role, extra_languages: [] })
+})
+
+// PATCH /users/:id/languages — set the extra languages an existing proofreader login can also access
+router.patch('/users/:id/languages', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { extra_languages } = req.body as { extra_languages: string[] }
+
+  if (!Array.isArray(extra_languages) || !extra_languages.every(l => typeof l === 'string')) {
+    return res.status(400).json({ error: 'extra_languages must be an array of strings' })
+  }
+
+  const normalized = [...new Set(extra_languages.map(l => l.toUpperCase()))]
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ extra_languages: normalized })
+    .eq('id', req.params.id)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  res.json({ id: req.params.id, extra_languages: normalized })
 })
 
 // DELETE /users/:id — delete an auth user
