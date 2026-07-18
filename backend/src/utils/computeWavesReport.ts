@@ -28,6 +28,7 @@ export interface WaveReportData {
     waves27: { ad: Record<string, number>; web: Record<string, number> }
   }
   newLanguagesLaunchedThisWeek: number
+  newLanguagesLaunchedList: { product: string; language: string }[]
 }
 
 const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running', 'ready to launch'])
@@ -281,13 +282,18 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
     : ['last_snapshot_ad_status', 'last_snapshot_website_status']
   const { data: allSubsForLaunchCounter } = await supabase
     .from('monday_subitems')
-    .select(`ad_status, website_status, ${baselineAdCol}, ${baselineWebCol}`)
-  const newLanguagesLaunchedThisWeek = (allSubsForLaunchCounter ?? []).filter((s: any) => {
+    .select(`name, product_name, ad_status, website_status, ${baselineAdCol}, ${baselineWebCol}`)
+  const newlyLaunchedSubs = (allSubsForLaunchCounter ?? []).filter((s: any) => {
     const nowLaunched = isLaunchedStatus(s.ad_status) && isLaunchedStatus(s.website_status)
     if (!nowLaunched) return false
     const wasLaunched = isLaunchedStatus(s[baselineAdCol]) && isLaunchedStatus(s[baselineWebCol])
     return !wasLaunched
-  }).length
+  })
+  const newLanguagesLaunchedThisWeek = newlyLaunchedSubs.length
+  const newLanguagesLaunchedList = newlyLaunchedSubs.map((s: any) => ({
+    product: s.product_name?.trim() || 'Unknown',
+    language: s.name?.trim() || 'Unknown',
+  }))
 
   return {
     weekStart: ws.toISOString(),
@@ -314,5 +320,6 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
     productSalesUpdatedAt,
     teamQueue,
     newLanguagesLaunchedThisWeek,
+    newLanguagesLaunchedList,
   }
 }
