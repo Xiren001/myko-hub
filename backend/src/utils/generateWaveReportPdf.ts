@@ -235,6 +235,45 @@ export function generateWaveReportPdf(
       y += 10
     }
 
+    function newLanguagesSection(period: 'week' | 'month') {
+      const periodLabel = period === 'month' ? 'Month' : 'Week'
+      sectionHeader(`New Languages Launched This ${periodLabel} — Detail`)
+
+      const list = data.newLanguagesLaunchedList ?? []
+      if (list.length === 0) {
+        doc.font('Helvetica').fontSize(8).fillColor(C.faint)
+           .text('No new languages launched this period.', MARGIN, y, { width: BODY_W })
+        y += 16
+        return
+      }
+
+      const grouped: Record<string, string[]> = {}
+      for (const { product, language } of list) {
+        (grouped[product] ??= []).push(language)
+      }
+      const products = Object.keys(grouped).sort((a, b) => a.localeCompare(b))
+
+      for (const product of products) {
+        if (y > PAGE_H - 60) { doc.addPage(); y = MARGIN }
+
+        const langs = grouped[product].sort().join(', ')
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
+           .text(product, MARGIN, y, { width: 200, continued: false })
+        doc.font('Helvetica').fontSize(8).fillColor(C.muted)
+           .text(langs, MARGIN + 200, y, { width: BODY_W - 200, align: 'right' })
+
+        const rowH = Math.max(
+          doc.heightOfString(product, { width: 200 }),
+          doc.heightOfString(langs, { width: BODY_W - 200 }),
+        )
+        y += Math.max(rowH, 12) + 6
+      }
+
+      y += 4
+      doc.rect(MARGIN, y, BODY_W, 0.5).fill(C.rule)
+      y += 10
+    }
+
     function teamQueueSection() {
       sectionHeader('Team Queue')
 
@@ -302,6 +341,9 @@ export function generateWaveReportPdf(
 
     sectionHeader('Waves 2–7')
     for (const row of waves27Metrics(data, period)) metricRow(row)
+    y += 4
+
+    newLanguagesSection(period)
     y += 4
 
     teamQueueSection()
