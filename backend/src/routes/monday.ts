@@ -810,6 +810,17 @@ router.post('/wave-report-snapshot', authenticate, requireAdmin, async (_req: Au
   }
 })
 
+// ── DELETE /api/monday/wave-report-snapshot/:weekStart ─────────────────────
+router.delete('/wave-report-snapshot/:weekStart', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { weekStart } = req.params
+  const { error } = await supabase
+    .from('wave_report_snapshots')
+    .delete()
+    .eq('week_start', weekStart)
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
+})
+
 // ── GET /api/monday/wave-report-snapshot/:weekStart/pdf ───────────────────
 router.get('/wave-report-snapshot/:weekStart/pdf', authenticate, async (req: AuthRequest, res: Response) => {
   const { weekStart } = req.params
@@ -915,6 +926,17 @@ router.post('/wave-report-monthly-snapshot', authenticate, requireAdmin, async (
   } catch (err: any) {
     return res.status(500).json({ error: err.message })
   }
+})
+
+// ── DELETE /api/monday/wave-report-monthly-snapshot/:monthStart ────────────
+router.delete('/wave-report-monthly-snapshot/:monthStart', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { monthStart } = req.params
+  const { error } = await supabase
+    .from('wave_report_monthly_snapshots')
+    .delete()
+    .eq('month_start', monthStart)
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
 })
 
 // ── GET /api/monday/wave-report-monthly-snapshot/:monthStart/pdf ──────────
