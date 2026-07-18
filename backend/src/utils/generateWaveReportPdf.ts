@@ -1,5 +1,8 @@
 import PDFDocument from 'pdfkit'
+import path from 'path'
 import type { WaveReportData } from './computeWavesReport'
+
+type PDFDoc = InstanceType<typeof PDFDocument>
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = {
@@ -17,6 +20,85 @@ const PAGE_W  = 595.28
 const PAGE_H  = 841.89
 const MARGIN  = 48
 const BODY_W  = PAGE_W - MARGIN * 2
+
+// ── Fonts ─────────────────────────────────────────────────────────────────────
+// Subitem/product names come straight from Monday.com board titles — freeform text that can be
+// typed in any script. The 14 built-in PDF fonts only cover WinAnsi/Latin-1, so anything outside
+// that (Hebrew, Japanese, Korean, and even Latin-Extended like Polish/Czech/Turkish diacritics)
+// renders as mojibake. We embed Noto Sans (broad Latin/Cyrillic/Greek coverage) plus dedicated
+// Hebrew/Japanese/Korean faces, and pick a face per run of same-script characters at draw time.
+const FONT_DIR = path.join(__dirname, '..', '..', 'assets', 'fonts')
+
+function registerFonts(doc: PDFDoc) {
+  doc.registerFont('Text',         path.join(FONT_DIR, 'NotoSans-Regular.woff'))
+  doc.registerFont('Text-Bold',    path.join(FONT_DIR, 'NotoSans-Bold.woff'))
+  doc.registerFont('Text-Hebrew',  path.join(FONT_DIR, 'NotoSansHebrew-Regular.woff'))
+  doc.registerFont('Text-JP',      path.join(FONT_DIR, 'NotoSansJP-Regular.woff'))
+  doc.registerFont('Text-KR',      path.join(FONT_DIR, 'NotoSansKR-Regular.woff'))
+}
+
+type Script = 'latin' | 'hebrew' | 'jp' | 'kr'
+
+function scriptOf(ch: string): Script {
+  const code = ch.codePointAt(0) ?? 0
+  if (code >= 0x0590 && code <= 0x05FF) return 'hebrew'
+  if ((code >= 0xAC00 && code <= 0xD7A3) || (code >= 0x1100 && code <= 0x11FF) || (code >= 0x3130 && code <= 0x318F)) return 'kr'
+  if ((code >= 0x3040 && code <= 0x30FF) || (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0xFF66 && code <= 0xFF9F)) return 'jp'
+  return 'latin'
+}
+
+function splitRuns(text: string): { text: string; script: Script }[] {
+  const runs: { text: string; script: Script }[] = []
+  for (const ch of text) {
+    const script = scriptOf(ch)
+    const last = runs[runs.length - 1]
+    if (last && last.script === script) last.text += ch
+    else runs.push({ text: ch, script })
+  }
+  // Hebrew is stored logical-order (reading order) but pdfkit only ever draws left-to-right —
+  // reverse each Hebrew run's characters so it comes out in correct right-to-left visual order.
+  // (Doesn't reorder runs themselves, so this only handles Hebrew embedded in an LTR-base string —
+  // full bidi reordering of mixed RTL/LTR run sequences isn't implemented.)
+  for (const r of runs) {
+    if (r.script === 'hebrew') r.text = [...r.text].reverse().join('')
+  }
+  return runs
+}
+
+// Hebrew/Japanese/Korean have no bundled bold weight — bold is only meaningful for Latin runs.
+const FONT_FOR: Record<Script, { regular: string; bold: string }> = {
+  latin:  { regular: 'Text',        bold: 'Text-Bold' },
+  hebrew: { regular: 'Text-Hebrew', bold: 'Text-Hebrew' },
+  jp:     { regular: 'Text-JP',     bold: 'Text-JP' },
+  kr:     { regular: 'Text-KR',     bold: 'Text-KR' },
+}
+
+function richWidth(doc: PDFDoc, text: string, size: number, bold = false): number {
+  return splitRuns(text).reduce((sum, r) => {
+    doc.font(FONT_FOR[r.script][bold ? 'bold' : 'regular']).fontSize(size)
+    return sum + doc.widthOfString(r.text)
+  }, 0)
+}
+
+// Draws freeform (possibly mixed-script) text on a single line, switching fonts per run.
+// align: 'right' anchors the text's right edge at x + width; default anchors the left edge at x.
+function richText(
+  doc: PDFDoc,
+  text: string,
+  x: number,
+  y: number,
+  opts: { size: number; color: string; bold?: boolean; width?: number; align?: 'left' | 'right' }
+): number {
+  const { size, color, bold = false, width, align = 'left' } = opts
+  const totalWidth = richWidth(doc, text, size, bold)
+  let cx = align === 'right' ? x + (width ?? 0) - totalWidth : x
+  for (const r of splitRuns(text)) {
+    doc.font(FONT_FOR[r.script][bold ? 'bold' : 'regular']).fontSize(size).fillColor(color)
+    doc.text(r.text, cx, y, { lineBreak: false })
+    cx += doc.widthOfString(r.text)
+  }
+  return totalWidth
+}
 
 function formatCurrency(n: number): string {
   if (n >= 1_000_000) return `€${(n / 1_000_000).toFixed(1)}M`
@@ -45,7 +127,7 @@ interface MetricRow {
 function wave1Metrics(d: WaveReportData): MetricRow[] {
   return [
     {
-      label: 'Wave 1 → Wave 2',
+      label: 'Wave 1 -> Wave 2',
       value: d.pctWave1ToWave2 !== null ? `${d.pctWave1ToWave2}%` : '—',
       note:  `${d.wave1ToWave2Count} of ${d.wave1Total} products`,
       desc:  'Percentage of Wave 1 products promoted to Wave 2. Denominator is Wave 1 + Wave 2 combined.',
@@ -56,14 +138,14 @@ function wave1Metrics(d: WaveReportData): MetricRow[] {
       desc:  'Wave 1 products where EN, ES, and DE are all in "launched" status — each product counts as 1.',
     },
     {
-      label: 'Days: Spot → English Test Done',
+      label: 'Days: Spot -> English Test Done',
       value: d.avgDaysSpotToEnTest !== null ? `${d.avgDaysSpotToEnTest}d` : '—',
-      desc:  'Average Phase 1 days (lp_building_at → lp_ready_at) for English subitems in Wave 1.',
+      desc:  'Average Phase 1 days (lp_building_at -> lp_ready_at) for English subitems in Wave 1.',
     },
     {
       label: 'Avg Days in Proofread',
       value: d.avgDaysProofread !== null ? `${d.avgDaysProofread}d` : '—',
-      desc:  'Average days from Proofread start to Ready to Launch (lp_proofread_at → lp_ready_to_launch_at), excluding EN subitems.',
+      desc:  'Average days from Proofread start to Ready to Launch (lp_proofread_at -> lp_ready_to_launch_at), excluding EN subitems.',
     },
     {
       label: 'Proofread Queue (Wave 1)',
@@ -71,7 +153,7 @@ function wave1Metrics(d: WaveReportData): MetricRow[] {
       desc:  'Non-English Wave 1 subitems with "proofread" in status, whose product is active in the Proofreading page.',
     },
     {
-      label: 'Days: EN Done → Others Done',
+      label: 'Days: EN Done -> Others Done',
       value: d.avgDaysEnToOthers !== null ? `${d.avgDaysEnToOthers}d` : '—',
       desc:  'Average Phase 1 days across all Wave 1 subitems (EN, ES, DE and others combined).',
     },
@@ -137,7 +219,7 @@ function waves27Metrics(d: WaveReportData, period: 'week' | 'month'): MetricRow[
     {
       label: 'Arriving to New Wave — Overall Avg',
       value: overall !== null ? `${overall}d` : '—',
-      desc:  'Average Phase 1 days (lp_building_at → lp_ready_at) for new language campaigns introduced per wave. Overall across waves 2–7.',
+      desc:  'Average Phase 1 days (lp_building_at -> lp_ready_at) for new language campaigns introduced per wave. Overall across waves 2–7.',
     },
     ...d.newWaveCampaignAvgDays.map(({ wave, avg }) => ({
       label: `  Wave ${wave} new languages`,
@@ -164,24 +246,26 @@ export function generateWaveReportPdf(
     doc.on('end',  () => resolve(Buffer.concat(chunks)))
     doc.on('error', reject)
 
+    registerFonts(doc)
+
     let y = 0
 
     // ── HEADER BAND ──────────────────────────────────────────────────────────
     doc.rect(0, 0, PAGE_W, 110).fill(C.ink)
 
-    doc.font('Helvetica-Bold').fontSize(20).fillColor(C.white)
+    doc.font('Text-Bold').fontSize(20).fillColor(C.white)
        .text(reportTitle.toUpperCase(), MARGIN, 28, { width: BODY_W })
 
-    doc.font('Helvetica').fontSize(11).fillColor('#94a3b8')
+    doc.font('Text').fontSize(11).fillColor('#94a3b8')
        .text(weekRangeLabel(data), MARGIN, 56, { width: BODY_W })
 
     const tag = isSnapshot ? 'Saved Snapshot' : 'Live Data'
     const tagX = PAGE_W - MARGIN - 90
     doc.roundedRect(tagX, 32, 88, 20, 4).fill(isSnapshot ? C.accent : '#475569')
-    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.white)
+    doc.font('Text-Bold').fontSize(7.5).fillColor(C.white)
        .text(tag.toUpperCase(), tagX, 38.5, { width: 88, align: 'center' })
 
-    doc.font('Helvetica').fontSize(8).fillColor('#64748b')
+    doc.font('Text').fontSize(8).fillColor('#64748b')
        .text(`Generated ${new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`,
              MARGIN, 86, { width: BODY_W })
 
@@ -193,7 +277,7 @@ export function generateWaveReportPdf(
       doc.rect(MARGIN, y, BODY_W, 0.5).fill(C.rule)
       y += 10
       doc.rect(MARGIN, y, 3, 13).fill(C.accent)
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
+      doc.font('Text-Bold').fontSize(9).fillColor(C.ink)
          .text(title.toUpperCase(), MARGIN + 10, y + 2, { width: BODY_W - 10, characterSpacing: 1 })
       y += 22
     }
@@ -207,25 +291,25 @@ export function generateWaveReportPdf(
       const COL_VAL  = 110
       const COL_BODY = BODY_W - COL_VAL
 
-      // Label
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
+      // Label (app-authored, always Latin)
+      doc.font('Text-Bold').fontSize(9).fillColor(C.ink)
          .text(row.label, MARGIN, y, { width: COL_BODY - 12 })
 
-      // Value
-      doc.font('Helvetica-Bold').fontSize(18).fillColor(C.accent)
+      // Value (app-generated, always Latin)
+      doc.font('Text-Bold').fontSize(18).fillColor(C.accent)
          .text(row.value, MARGIN + COL_BODY, y - 2, { width: COL_VAL, align: 'right' })
 
       const labelH = doc.heightOfString(row.label, { width: COL_BODY - 12 })
       y += Math.max(labelH, 22)
 
       if (row.note) {
-        doc.font('Helvetica').fontSize(8).fillColor(C.muted)
-           .text(row.note, MARGIN, y, { width: COL_BODY })
+        // note can carry a freeform Monday product/item name (e.g. mostLangsProduct) — render mixed-script safe
+        richText(doc, row.note, MARGIN, y, { size: 8, color: C.muted })
         y += 12
       }
 
-      // Description
-      doc.font('Helvetica').fontSize(8).fillColor(C.faint)
+      // Description (app-authored, always Latin)
+      doc.font('Text').fontSize(8).fillColor(C.faint)
          .text(row.desc, MARGIN, y, { width: COL_BODY - 4 })
       const descH = doc.heightOfString(row.desc, { width: COL_BODY - 4 })
       y += descH + 12
@@ -241,7 +325,7 @@ export function generateWaveReportPdf(
 
       const list = data.newLanguagesLaunchedList ?? []
       if (list.length === 0) {
-        doc.font('Helvetica').fontSize(8).fillColor(C.faint)
+        doc.font('Text').fontSize(8).fillColor(C.faint)
            .text('No new languages launched this period.', MARGIN, y, { width: BODY_W })
         y += 16
         return
@@ -257,16 +341,11 @@ export function generateWaveReportPdf(
         if (y > PAGE_H - 60) { doc.addPage(); y = MARGIN }
 
         const langs = grouped[product].sort().join(', ')
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
-           .text(product, MARGIN, y, { width: 200, continued: false })
-        doc.font('Helvetica').fontSize(8).fillColor(C.muted)
-           .text(langs, MARGIN + 200, y, { width: BODY_W - 200, align: 'right' })
+        // Both product and language names are freeform Monday board titles — may be any script
+        richText(doc, product, MARGIN, y, { size: 9, color: C.ink, bold: true, width: 200 })
+        richText(doc, langs, MARGIN + 200, y, { size: 8, color: C.muted, width: BODY_W - 200, align: 'right' })
 
-        const rowH = Math.max(
-          doc.heightOfString(product, { width: 200 }),
-          doc.heightOfString(langs, { width: BODY_W - 200 }),
-        )
-        y += Math.max(rowH, 12) + 6
+        y += 12 + 6
       }
 
       y += 4
@@ -285,7 +364,7 @@ export function generateWaveReportPdf(
       for (const { label, queue } of groups) {
         if (y > PAGE_H - 80) { doc.addPage(); y = MARGIN }
 
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(C.mid)
+        doc.font('Text-Bold').fontSize(8).fillColor(C.mid)
            .text(label.toUpperCase(), MARGIN, y, { characterSpacing: 0.5 })
         y += 14
 
@@ -304,23 +383,23 @@ export function generateWaveReportPdf(
           let ty = startY
 
           const total = Object.values(q).reduce((s, n) => s + n, 0)
-          doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
+          doc.font('Text-Bold').fontSize(9).fillColor(C.ink)
              .text(name, xOff, ty, { width: HALF })
           ty += 14
-          doc.font('Helvetica-Bold').fontSize(16).fillColor(C.accent)
+          doc.font('Text-Bold').fontSize(16).fillColor(C.accent)
              .text(String(total), xOff, ty, { width: HALF })
           ty += 22
 
           const entries = Object.entries(q).sort(([, a], [, b]) => b - a)
           for (const [status, count] of entries) {
-            doc.font('Helvetica').fontSize(8).fillColor(C.muted)
-               .text(status, xOff, ty, { width: HALF - 30, continued: false })
-            doc.font('Helvetica-Bold').fontSize(8).fillColor(C.ink)
+            // status labels are Monday status-column option text — freeform, render mixed-script safe
+            richText(doc, status, xOff, ty, { size: 8, color: C.muted, width: HALF - 30 })
+            doc.font('Text-Bold').fontSize(8).fillColor(C.ink)
                .text(String(count), xOff + HALF - 28, ty, { width: 28, align: 'right' })
             ty += 12
           }
           if (entries.length === 0) {
-            doc.font('Helvetica').fontSize(8).fillColor(C.faint)
+            doc.font('Text').fontSize(8).fillColor(C.faint)
                .text('All clear', xOff, ty)
             ty += 12
           }
@@ -351,7 +430,7 @@ export function generateWaveReportPdf(
     // ── FOOTER ────────────────────────────────────────────────────────────────
     const footerY = PAGE_H - 36
     doc.rect(0, footerY - 1, PAGE_W, 0.5).fill(C.rule)
-    doc.font('Helvetica').fontSize(8).fillColor(C.faint)
+    doc.font('Text').fontSize(8).fillColor(C.faint)
        .text(`Myko Hub — ${reportTitle}`, MARGIN, footerY + 6, { width: BODY_W, align: 'center' })
 
     doc.end()
