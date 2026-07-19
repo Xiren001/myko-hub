@@ -14,6 +14,8 @@ import translateRouter from './routes/translate'
 import adminUsersRouter from './routes/admin-users'
 import mondayRouter from './routes/monday'
 import proofNotificationsRouter from './routes/proof-notifications'
+import bioedgeRouter from './routes/bioedge'
+import bioedgeProofCorrectionsRouter from './routes/bioedge-proof-corrections'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 import { startNotificationScheduler } from './jobs/notificationScheduler'
@@ -41,6 +43,8 @@ app.use('/api/translate', translateRouter)
 app.use('/api/admin/users', adminUsersRouter)
 app.use('/api/monday', mondayRouter)
 app.use('/api/proof-notifications', proofNotificationsRouter)
+app.use('/api/bioedge', bioedgeRouter)
+app.use('/api/bioedge-proof-corrections', bioedgeProofCorrectionsRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => {
