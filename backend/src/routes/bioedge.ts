@@ -380,24 +380,36 @@ router.post('/sync', authenticate, async (_req: AuthRequest, res: Response) => {
 })
 
 // ── POST /api/bioedge/register-hooks ──────────────────────────────────────
-// Registers all relevant webhooks on both BioEdge boards. Admin only.
+// Registers all relevant webhooks on the parent BioEdge board. Admin only.
+// Monday.com does not allow creating webhooks directly on a subitems board —
+// subitem-level events (including column changes, via change_subitem_column_value)
+// are delivered to webhooks registered on the PARENT board instead.
+// Idempotent: skips any event already registered so this is safe to re-run.
 router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
-  const events = ['change_column_value', 'create_item', 'item_deleted', 'create_subitem', 'change_name', 'change_subitem_name', 'subitem_deleted', 'item_restored']
-  const results: Record<string, unknown> = {}
+  const events = [
+    'change_column_value', 'change_subitem_column_value',
+    'create_item', 'item_deleted', 'create_subitem',
+    'change_name', 'change_subitem_name', 'subitem_deleted', 'item_restored',
+  ]
 
-  for (const boardId of [BIOEDGE_BOARD, BIOEDGE_SUBITEM_BOARD]) {
-    results[boardId] = {}
-    for (const event of events) {
-      const resp = await mondayGql(`
-        mutation { create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: ${event}) { id board_id } }
-      `)
-      ;(results[boardId] as any)[event] = resp?.data?.create_webhook ?? resp?.errors
+  const existingResp = await mondayGql(`{ webhooks(board_id: ${BIOEDGE_BOARD}) { id event } }`)
+  const existingEvents = new Set((existingResp?.data?.webhooks ?? []).map((w: any) => w.event))
+
+  const results: Record<string, unknown> = {}
+  for (const event of events) {
+    if (existingEvents.has(event)) {
+      results[event] = 'already registered'
+      continue
     }
+    const resp = await mondayGql(`
+      mutation { create_webhook(board_id: ${BIOEDGE_BOARD}, url: "${WEBHOOK_URL}", event: ${event}) { id board_id } }
+    `)
+    results[event] = resp?.data?.create_webhook ?? resp?.errors
   }
 
-  return res.json({ ok: true, results })
+  return res.json({ ok: true, board: BIOEDGE_BOARD, results })
 })
 
 export default router
