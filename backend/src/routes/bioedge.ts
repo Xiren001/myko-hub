@@ -281,6 +281,18 @@ router.post('/webhook', async (req: Request, res: Response) => {
   return res.json({ ok: true })
 })
 
+// ── GET /api/bioedge/items ────────────────────────────────────────────────
+router.get('/items', authenticate, async (_req: AuthRequest, res: Response) => {
+  const { data, error } = await supabase
+    .from('bioedge_items')
+    .select('*, bioedge_subitems(*)')
+    .order('name')
+    .order('name', { foreignTable: 'bioedge_subitems', ascending: true })
+
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json(data ?? [])
+})
+
 // ── POST /api/bioedge/sync ────────────────────────────────────────────────
 // Full resync of the BioEdge board + subitems. Authenticated (any role).
 router.post('/sync', authenticate, async (_req: AuthRequest, res: Response) => {
