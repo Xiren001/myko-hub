@@ -78,20 +78,32 @@ alter table public.bioedge_subitems enable row level security;
 alter table public.bioedge_proof_products enable row level security;
 alter table public.bioedge_proof_corrections enable row level security;
 
+drop policy if exists "bioedge_items_select" on public.bioedge_items;
 create policy "bioedge_items_select" on public.bioedge_items for select using (auth.uid() is not null);
+drop policy if exists "bioedge_items_write" on public.bioedge_items;
 create policy "bioedge_items_write" on public.bioedge_items for all using (public.current_user_role() = 'admin');
 
+drop policy if exists "bioedge_subitems_select" on public.bioedge_subitems;
 create policy "bioedge_subitems_select" on public.bioedge_subitems for select using (auth.uid() is not null);
+drop policy if exists "bioedge_subitems_write" on public.bioedge_subitems;
 create policy "bioedge_subitems_write" on public.bioedge_subitems for all using (public.current_user_role() = 'admin');
 
+drop policy if exists "bioedge_proof_products_select" on public.bioedge_proof_products;
 create policy "bioedge_proof_products_select" on public.bioedge_proof_products for select using (auth.uid() is not null);
+drop policy if exists "bioedge_proof_products_insert" on public.bioedge_proof_products;
 create policy "bioedge_proof_products_insert" on public.bioedge_proof_products for insert with check (public.current_user_role() = 'admin');
+drop policy if exists "bioedge_proof_products_update" on public.bioedge_proof_products;
 create policy "bioedge_proof_products_update" on public.bioedge_proof_products for update using (public.current_user_role() = 'admin');
+drop policy if exists "bioedge_proof_products_delete" on public.bioedge_proof_products;
 create policy "bioedge_proof_products_delete" on public.bioedge_proof_products for delete using (public.current_user_role() = 'admin');
 
+drop policy if exists "bioedge_proof_corrections_select" on public.bioedge_proof_corrections;
 create policy "bioedge_proof_corrections_select" on public.bioedge_proof_corrections for select using (auth.uid() is not null);
+drop policy if exists "bioedge_proof_corrections_insert" on public.bioedge_proof_corrections;
 create policy "bioedge_proof_corrections_insert" on public.bioedge_proof_corrections for insert with check (public.current_user_role() = 'admin');
+drop policy if exists "bioedge_proof_corrections_update" on public.bioedge_proof_corrections;
 create policy "bioedge_proof_corrections_update" on public.bioedge_proof_corrections for update using (public.current_user_role() = 'admin');
+drop policy if exists "bioedge_proof_corrections_delete" on public.bioedge_proof_corrections;
 create policy "bioedge_proof_corrections_delete" on public.bioedge_proof_corrections for delete using (public.current_user_role() = 'admin');
 
 -- Best-effort: add the new proof tables to the realtime publication so
