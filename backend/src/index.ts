@@ -19,6 +19,7 @@ import bioedgeProofCorrectionsRouter from './routes/bioedge-proof-corrections'
 import bioedgeNotificationsRouter from './routes/bioedge-notifications'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
+import { isBioedgeSharingEnabled } from './utils/bioedgeSharing'
 import { startNotificationScheduler } from './jobs/notificationScheduler'
 import { startBioedgeNotificationScheduler } from './jobs/bioedgeNotificationScheduler'
 import { startWaveReportCron } from './jobs/waveReportCron'
@@ -32,7 +33,8 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
-  res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null, system: req.system ?? 'waves' })
+  const bioedgeShared = await isBioedgeSharingEnabled()
+  res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null, system: req.system ?? 'waves', bioedgeShared })
 })
 
 app.use('/api/builds', buildsRouter)

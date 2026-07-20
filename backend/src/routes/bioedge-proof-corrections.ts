@@ -2,6 +2,8 @@ import { Router, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, requireCorrectionWrite, requireBioedgeSystem, AuthRequest } from '../middleware/auth'
 import { enqueueBioedgeNotification } from '../jobs/bioedgeNotificationScheduler'
+import { enqueueNotification } from '../jobs/notificationScheduler'
+import { isBioedgeSharingEnabled } from '../utils/bioedgeSharing'
 
 const router = Router()
 
@@ -115,11 +117,13 @@ router.put('/products/:id', async (req: AuthRequest, res: Response) => {
 
   if (error) return res.status(500).json({ error: error.message })
 
-  // Auto-notify when language is first assigned
+  // Auto-notify when language is first assigned — reuse the Waves notification
+  // pipeline instead of BioEdge's own when sharing is enabled
   if (updateData.language && typeof updateData.language === 'string' && data.notified_at === null) {
-    enqueueBioedgeNotification(updateData.language as string).catch(err =>
-      console.error('[bioedge-notify] enqueue error:', err)
-    )
+    const language = updateData.language as string
+    isBioedgeSharingEnabled()
+      .then(shared => shared ? enqueueNotification(language) : enqueueBioedgeNotification(language))
+      .catch(err => console.error('[bioedge-notify] enqueue error:', err))
   }
 
   res.json(data)

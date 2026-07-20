@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
+import { isBioedgeSharingEnabled } from '../utils/bioedgeSharing'
 
 export interface AuthRequest extends Request {
   userId?: string
@@ -79,18 +80,18 @@ export function isAdmin(req: AuthRequest): boolean {
   return req.userRole === 'admin'
 }
 
-// Blocks bioedge_* logins from touching Waves data (admin bypasses — shared superuser role)
-export function requireWavesSystem(req: AuthRequest, res: Response, next: NextFunction) {
-  if (req.userRole !== 'admin' && req.system === 'bioedge') {
-    return res.status(403).json({ error: 'Wrong system' })
-  }
-  next()
+// Blocks bioedge_* logins from touching Waves data (admin bypasses — shared superuser role;
+// also bypassed entirely when the "share BioEdge with Waves" setting is on)
+export async function requireWavesSystem(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.userRole === 'admin' || req.system !== 'bioedge') return next()
+  if (await isBioedgeSharingEnabled()) return next()
+  return res.status(403).json({ error: 'Wrong system' })
 }
 
-// Blocks Waves logins from touching BioEdge data (admin bypasses — shared superuser role)
-export function requireBioedgeSystem(req: AuthRequest, res: Response, next: NextFunction) {
-  if (req.userRole !== 'admin' && req.system !== 'bioedge') {
-    return res.status(403).json({ error: 'Wrong system' })
-  }
-  next()
+// Blocks Waves logins from touching BioEdge data (admin bypasses — shared superuser role;
+// also bypassed entirely when the "share BioEdge with Waves" setting is on)
+export async function requireBioedgeSystem(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.userRole === 'admin' || req.system === 'bioedge') return next()
+  if (await isBioedgeSharingEnabled()) return next()
+  return res.status(403).json({ error: 'Wrong system' })
 }
