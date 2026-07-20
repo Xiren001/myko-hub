@@ -16,9 +16,11 @@ import mondayRouter from './routes/monday'
 import proofNotificationsRouter from './routes/proof-notifications'
 import bioedgeRouter from './routes/bioedge'
 import bioedgeProofCorrectionsRouter from './routes/bioedge-proof-corrections'
+import bioedgeNotificationsRouter from './routes/bioedge-notifications'
 import { authenticate, AuthRequest } from './middleware/auth'
 import { supabase } from './supabase'
 import { startNotificationScheduler } from './jobs/notificationScheduler'
+import { startBioedgeNotificationScheduler } from './jobs/bioedgeNotificationScheduler'
 import { startWaveReportCron } from './jobs/waveReportCron'
 import { startWaveReportMonthlyCron } from './jobs/waveReportMonthlyCron'
 
@@ -30,7 +32,7 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
-  res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null })
+  res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null, system: req.system ?? 'waves' })
 })
 
 app.use('/api/builds', buildsRouter)
@@ -45,11 +47,13 @@ app.use('/api/monday', mondayRouter)
 app.use('/api/proof-notifications', proofNotificationsRouter)
 app.use('/api/bioedge', bioedgeRouter)
 app.use('/api/bioedge-proof-corrections', bioedgeProofCorrectionsRouter)
+app.use('/api/bioedge-notifications', bioedgeNotificationsRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`)
   startNotificationScheduler()
+  startBioedgeNotificationScheduler()
   startWaveReportCron()
   startWaveReportMonthlyCron()
 })

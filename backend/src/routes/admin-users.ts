@@ -18,6 +18,20 @@ router.get('/languages', authenticate, requireAdmin, async (_req: AuthRequest, r
   res.json(langs)
 })
 
+// GET /bioedge-languages — distinct non-EN languages from bioedge_proof_products
+router.get('/bioedge-languages', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  const { data, error } = await supabase
+    .from('bioedge_proof_products')
+    .select('language')
+    .not('language', 'is', null)
+    .neq('language', 'EN')
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const langs = Array.from(new Set((data ?? []).map(r => r.language as string))).sort()
+  res.json(langs)
+})
+
 // GET /users — list all auth users with their profile role
 router.get('/users', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   const { data, error } = await supabase.auth.admin.listUsers()

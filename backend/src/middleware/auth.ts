@@ -6,6 +6,7 @@ export interface AuthRequest extends Request {
   userId?: string
   userRole?: string
   userLangs?: string[]   // set for proofreader_XX roles; primary lang (uppercase, e.g. "ES") + any extra_languages
+  system?: 'waves' | 'bioedge'   // which proofreading system this login belongs to (bioedge_* role prefix)
 }
 
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
@@ -33,7 +34,12 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
     .single()
 
   req.userId = user.id
-  const rawRole: string = profile?.role ?? 'website'
+  const rawRoleFull: string = profile?.role ?? 'website'
+  // bioedge_* roles are the BioEdge-system equivalent of the same base role (bioedge_ads, bioedge_proofreader_es, ...).
+  // Strip the prefix before the usual parsing so req.userRole keeps the exact same values either system uses.
+  const isBioedge = rawRoleFull.startsWith('bioedge_')
+  const rawRole = isBioedge ? rawRoleFull.slice('bioedge_'.length) : rawRoleFull
+  req.system = isBioedge ? 'bioedge' : 'waves'
   // proofreader_es → role='proofreader', langs=['ES', ...extra_languages]
   const langMatch = rawRole.match(/^proofreader_([a-z]+)$/i)
   if (langMatch) {
@@ -71,4 +77,20 @@ export function requireCorrectionWrite(req: AuthRequest, res: Response, next: Ne
 // Returns true if the request role is admin (no language filter ever applies)
 export function isAdmin(req: AuthRequest): boolean {
   return req.userRole === 'admin'
+}
+
+// Blocks bioedge_* logins from touching Waves data (admin bypasses — shared superuser role)
+export function requireWavesSystem(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.userRole !== 'admin' && req.system === 'bioedge') {
+    return res.status(403).json({ error: 'Wrong system' })
+  }
+  next()
+}
+
+// Blocks Waves logins from touching BioEdge data (admin bypasses — shared superuser role)
+export function requireBioedgeSystem(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.userRole !== 'admin' && req.system !== 'bioedge') {
+    return res.status(403).json({ error: 'Wrong system' })
+  }
+  next()
 }

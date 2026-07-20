@@ -1,11 +1,16 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, requireCorrectionWrite, AuthRequest } from '../middleware/auth'
+import { authenticate, requireAdmin, requireCorrectionWrite, requireBioedgeSystem, AuthRequest } from '../middleware/auth'
+import { enqueueBioedgeNotification } from '../jobs/bioedgeNotificationScheduler'
 
 const router = Router()
 
+// Every route here is BioEdge-only — a Waves-scoped login (proofreader/ads/website/management
+// without the bioedge_ role prefix) is blocked from touching bioedge_proof_products/corrections.
+router.use(authenticate, requireBioedgeSystem)
+
 // GET /products
-router.get('/products', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/products', async (req: AuthRequest, res: Response) => {
   let q = supabase.from('bioedge_proof_products').select('*').order('language').order('product_name')
   if (req.userLangs?.length) q = q.in('language', req.userLangs)
 
@@ -24,7 +29,7 @@ router.get('/products', authenticate, async (req: AuthRequest, res: Response) =>
 })
 
 // GET /products/:id/corrections
-router.get('/products/:id/corrections', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/products/:id/corrections', async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('bioedge_proof_corrections')
     .select('*')
@@ -36,7 +41,7 @@ router.get('/products/:id/corrections', authenticate, async (req: AuthRequest, r
 })
 
 // POST /products — admin only
-router.post('/products', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/products', requireAdmin, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('bioedge_proof_products')
     .insert(req.body)
@@ -53,7 +58,7 @@ router.post('/products', authenticate, requireAdmin, async (req: AuthRequest, re
 // ads: ads_done only
 // website: pdp_url, drive_folder, website_done
 // done is auto-computed as website_done AND ads_done for ads/website roles
-router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/products/:id', async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
 
   let updateData: Record<string, unknown>
@@ -109,18 +114,26 @@ router.put('/products/:id', authenticate, async (req: AuthRequest, res: Response
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
+
+  // Auto-notify when language is first assigned
+  if (updateData.language && typeof updateData.language === 'string' && data.notified_at === null) {
+    enqueueBioedgeNotification(updateData.language as string).catch(err =>
+      console.error('[bioedge-notify] enqueue error:', err)
+    )
+  }
+
   res.json(data)
 })
 
 // DELETE /products/:id — admin only
-router.delete('/products/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/products/:id', requireAdmin, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('bioedge_proof_products').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
 })
 
 // POST /corrections — admin + management + proofreader + website
-router.post('/corrections', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
+router.post('/corrections', requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
     .from('bioedge_proof_corrections')
     .insert(req.body)
@@ -132,7 +145,7 @@ router.post('/corrections', authenticate, requireCorrectionWrite, async (req: Au
 })
 
 // PUT /corrections/:id — admin + management + proofreader (full); ads + website (done only, product must be ready)
-router.put('/corrections/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/corrections/:id', async (req: AuthRequest, res: Response) => {
   const role = req.userRole ?? ''
   const fullRoles = ['admin', 'management', 'proofreader']
   const doneOnlyRoles = ['ads', 'website']
@@ -169,7 +182,7 @@ router.put('/corrections/:id', authenticate, async (req: AuthRequest, res: Respo
 })
 
 // DELETE /corrections/:id — admin + management + proofreader + website
-router.delete('/corrections/:id', authenticate, requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
+router.delete('/corrections/:id', requireCorrectionWrite, async (req: AuthRequest, res: Response) => {
   const { error } = await supabase.from('bioedge_proof_corrections').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.status(204).end()
