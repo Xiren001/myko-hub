@@ -85,7 +85,7 @@ async function mondayGql(query: string): Promise<any> {
 async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void> {
   const { data: sub } = await supabase
     .from('bioedge_subitems')
-    .select('id, item_id, language, completed_funnel_url, ads_drive_link')
+    .select('id, item_id, language, completed_funnel_url, ads_drive_link, monday_url')
     .eq('monday_subitem_id', mondaySubitemId)
     .maybeSingle()
   if (!sub) return
@@ -115,6 +115,7 @@ async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void>
     language:     lang,
     pdp_url:      (sub.completed_funnel_url ?? null) as string | null,
     drive_folder: (sub.ads_drive_link ?? null) as string | null,
+    monday_url:   (sub.monday_url ?? null) as string | null,
     done:         false,
   })
 }
@@ -125,7 +126,7 @@ async function fetchAndUpsertItem(itemId: string): Promise<void> {
       id name
       group { title }
       column_values { id text }
-      subitems { id name column_values { id text } }
+      subitems { id name url column_values { id text } }
     }
   }`)
 
@@ -146,7 +147,7 @@ async function fetchAndUpsertItem(itemId: string): Promise<void> {
   if (!ins) return
 
   for (const sub of item.subitems ?? []) {
-    const subCols: Record<string, unknown> = {}
+    const subCols: Record<string, unknown> = { monday_url: sub.url ?? null }
     for (const cv of sub.column_values ?? []) {
       const f = SUB_COL[cv.id]
       if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
@@ -223,13 +224,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
       }
 
     } else if (event.type === 'create_subitem') {
-      const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name column_values { id text } parent_item { id } } }`)
+      const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name url column_values { id text } parent_item { id } } }`)
       const sub = data?.data?.items?.[0]
       if (sub?.parent_item?.id) {
         const { data: parentItem } = await supabase.from('bioedge_items')
           .select('id').eq('monday_item_id', String(sub.parent_item.id)).single()
         if (parentItem) {
-          const subCols: Record<string, unknown> = {}
+          const subCols: Record<string, unknown> = { monday_url: sub.url ?? null }
           for (const cv of sub.column_values ?? []) {
             const f = SUB_COL[cv.id]
             if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
@@ -246,10 +247,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const { data: parentItem } = await supabase.from('bioedge_items')
         .select('id').eq('monday_item_id', parentItemId).single()
       if (parentItem) {
-        const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name column_values { id text } } }`)
+        const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name url column_values { id text } } }`)
         const sub = data?.data?.items?.[0]
         if (sub) {
-          const subCols: Record<string, unknown> = {}
+          const subCols: Record<string, unknown> = { monday_url: sub.url ?? null }
           for (const cv of sub.column_values ?? []) {
             const f = SUB_COL[cv.id]
             if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
@@ -314,7 +315,7 @@ router.post('/sync', authenticate, async (_req: AuthRequest, res: Response) => {
               id name
               group { title }
               column_values { id text }
-              subitems { id name column_values { id text } }
+              subitems { id name url column_values { id text } }
             }
           }
         }
@@ -341,7 +342,7 @@ router.post('/sync', authenticate, async (_req: AuthRequest, res: Response) => {
 
         for (const sub of item.subitems ?? []) {
           seenSubitemIds.push(sub.id)
-          const subCols: Record<string, unknown> = {}
+          const subCols: Record<string, unknown> = { monday_url: sub.url ?? null }
           for (const cv of sub.column_values ?? []) {
             const f = SUB_COL[cv.id]
             if (f) subCols[f] = BOOL_FIELDS.has(f) ? (cv.text === 'v' || cv.text === 'true') : (cv.text || null)
