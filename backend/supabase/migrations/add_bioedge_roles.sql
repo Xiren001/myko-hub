@@ -10,10 +10,11 @@
 alter table public.profiles drop constraint if exists profiles_role_check;
 
 alter table public.profiles add constraint profiles_role_check check (
-  role in ('admin', 'management', 'ads', 'website')
+  role in ('admin', 'management', 'ads', 'website', 'proofreader')
   or role ~ '^proofreader_[a-z]+$'
   or role = 'bioedge_management'
   or role = 'bioedge_ads'
   or role = 'bioedge_website'
+  or role = 'bioedge_proofreader'
   or role ~ '^bioedge_proofreader_[a-z]+$'
 );
