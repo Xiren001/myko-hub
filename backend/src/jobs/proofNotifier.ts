@@ -66,11 +66,25 @@ export async function sendProofNotificationsForLanguage(language: string): Promi
   </p>
 </div>`
 
-  const results = await Promise.all(
-    emailConfig.emails.map((to: string) =>
+  const plainSubject = `${subject} - summary`
+  const plainHtml = `
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#111;">
+  <h2 style="font-size:18px;margin:0 0 8px;">
+    ${count} product${count > 1 ? 's' : ''} waiting for <strong>${language}</strong> proofread
+  </h2>
+  <ul style="padding-left:20px;margin:0;">
+    ${products.map(p => `<li style="font-size:14px;color:#111;padding:4px 0;">${p.product_name}</li>`).join('')}
+  </ul>
+</div>`
+
+  const results = await Promise.all([
+    ...emailConfig.emails.map((to: string) =>
       resend.emails.send({ from: FROM_EMAIL, to, subject, html })
-    )
-  )
+    ),
+    ...emailConfig.emails.map((to: string) =>
+      resend.emails.send({ from: FROM_EMAIL, to, subject: plainSubject, html: plainHtml })
+    ),
+  ])
 
   const failed = results.filter(r => r.error)
   if (failed.length) {
