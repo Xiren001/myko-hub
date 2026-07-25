@@ -81,7 +81,9 @@ async function mondayGql(query: string): Promise<any> {
 
 // When a subitem's Ad Status or Funnel Status enters "Proofread", auto-create a
 // bioedge_proof_products entry so it appears on the BioEdge proofreading page.
-// No-op if one already exists for this product+language, or if the language is English.
+// No-op if this subitem already has one, or if the language is English. Keyed by
+// subitem_id rather than product_name so distinct subitems sharing a product name
+// each still get their own row.
 async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void> {
   const { data: sub } = await supabase
     .from('bioedge_subitems')
@@ -104,8 +106,7 @@ async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void>
   const { data: existing } = await supabase
     .from('bioedge_proof_products')
     .select('id')
-    .ilike('product_name', productName)
-    .eq('language', lang)
+    .eq('subitem_id', sub.id)
     .maybeSingle()
   if (existing) return
 

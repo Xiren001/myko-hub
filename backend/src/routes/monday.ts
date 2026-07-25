@@ -124,7 +124,9 @@ async function mondayGql(query: string): Promise<any> {
 }
 
 // When a subitem enters "Proofread" status, auto-create a proof_products entry
-// so it appears in the Proofreading page. No-op if one already exists.
+// so it appears in the Proofreading page. No-op if this subitem already has one —
+// keyed by subitem ID, not product_name, so distinct subitems sharing a product
+// name each still get their own row.
 async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<void> {
   const { data: sub } = await supabase
     .from('monday_subitems')
@@ -144,11 +146,12 @@ async function upsertProofProductFromSubitem(mondaySubitemId: string): Promise<v
   const { data: existing } = await supabase
     .from('proof_products')
     .select('id')
-    .ilike('product_name', productName)
+    .eq('monday_subitem_id', mondaySubitemId)
     .maybeSingle()
   if (existing) return
 
   await supabase.from('proof_products').insert({
+    monday_subitem_id: mondaySubitemId,
     product_name: productName,
     language:     null,
     pdp_url:      (sub.page_link ?? null) as string | null,
