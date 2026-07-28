@@ -42,7 +42,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   const rawRole = isBioedge ? rawRoleFull.slice('bioedge_'.length) : rawRoleFull
   req.system = isBioedge ? 'bioedge' : 'waves'
   // proofreader_es → role='proofreader', langs=['ES', ...extra_languages]
-  const langMatch = rawRole.match(/^proofreader_([a-z]+)$/i)
+  const langMatch = rawRole.match(/^proofreader_([a-z-]+)$/i)
   if (langMatch) {
     req.userRole = 'proofreader'
     const extra = ((profile?.extra_languages as string[] | null) ?? []).map(l => l.toUpperCase())
