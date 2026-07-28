@@ -69,9 +69,13 @@ router.post('/users', authenticate, requireAdmin, async (req: AuthRequest, res: 
     password,
     email_confirm: true,
   })
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) {
+    console.error('[admin-users] createUser failed', { email, role, error })
+    return res.status(500).json({ error: error.message })
+  }
 
-  await supabase.from('profiles').update({ role }).eq('id', created.user.id)
+  const { error: roleError } = await supabase.from('profiles').update({ role }).eq('id', created.user.id)
+  if (roleError) console.error('[admin-users] profiles role update failed', { userId: created.user.id, role, roleError })
 
   res.status(201).json({ id: created.user.id, email: created.user.email, role, extra_languages: [] })
 })
