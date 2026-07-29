@@ -30,6 +30,12 @@ const app = express()
 app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000' }))
 app.use(express.json())
 
+// TEMPORARY: diagnosing a CPU spike — remove once root cause is found.
+app.use((req, _res, next) => {
+  console.log(`[req] ${req.method} ${req.path}`)
+  next()
+})
+
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
