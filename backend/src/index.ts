@@ -27,19 +27,23 @@ import { startWaveReportMonthlyCron } from './jobs/waveReportMonthlyCron'
 
 const app = express()
 
+// TEMPORARY: diagnosing a CPU spike — remove once root cause is found.
+const INSTANCE_ID = Math.random().toString(36).slice(2, 8)
+
 app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000' }))
 app.use(express.json())
 
-// TEMPORARY: diagnosing a CPU spike — remove once root cause is found.
 app.use((req, _res, next) => {
-  console.log(`[req] ${req.method} ${req.path}`)
+  console.log(`[req][${INSTANCE_ID}] ${req.method} ${req.path}`)
   next()
 })
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/me', authenticate, async (req: AuthRequest, res) => {
+  const t0 = Date.now()
   const bioedgeShared = await isBioedgeSharingEnabled()
+  console.log(`[auth timing] isBioedgeSharingEnabled: ${Date.now() - t0}ms`)
   res.json({ userId: req.userId, userRole: req.userRole, userLangs: req.userLangs ?? null, system: req.system ?? 'waves', bioedgeShared })
 })
 
@@ -59,7 +63,7 @@ app.use('/api/bioedge-notifications', bioedgeNotificationsRouter)
 
 const PORT = process.env.PORT ?? 3001
 app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`)
+  console.log(`Backend running on port ${PORT} [instance ${INSTANCE_ID}]`)
   startNotificationScheduler()
   startBioedgeNotificationScheduler()
   startWaveReportCron()

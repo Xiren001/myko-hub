@@ -11,14 +11,17 @@ export interface AuthRequest extends Request {
 }
 
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
+  const t0 = Date.now()
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return res.status(401).json({ error: 'No token' })
 
   const { data: { user }, error } = await supabase.auth.getUser(token)
+  console.log(`[auth timing] getUser: ${Date.now() - t0}ms`)
   if (error || !user) return res.status(401).json({ error: 'Invalid token' })
 
   // Pass the user's JWT so the profile query works whether SUPABASE_SERVICE_ROLE_KEY
   // is the service role key (bypasses RLS) or the anon key (auth.uid() satisfies RLS)
+  const t1 = Date.now()
   const client = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -27,12 +30,15 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
       global: { headers: { Authorization: `Bearer ${token}` } },
     }
   )
+  console.log(`[auth timing] createClient: ${Date.now() - t1}ms`)
 
+  const t2 = Date.now()
   const { data: profile } = await client
     .from('profiles')
     .select('role, extra_languages')
     .eq('id', user.id)
     .single()
+  console.log(`[auth timing] profile select: ${Date.now() - t2}ms`)
 
   req.userId = user.id
   const rawRoleFull: string = profile?.role ?? 'website'
