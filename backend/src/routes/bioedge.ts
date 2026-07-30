@@ -38,25 +38,6 @@ const SUB_COL: Record<string, string> = {
 
 const BOOL_FIELDS = new Set(['we_tracked'])
 
-// Monday's free-text Language column → short code used across proof_products/bioedge_proof_products
-const LANG_MAP: Record<string, string> = {
-  'english':                  'EN',
-  'german':                   'DE',
-  'spanish':                  'ES',
-  'french':                   'FR',
-  'portugese (brazilian)':    'BR',
-}
-
-// Returns null both when no language is set and when it's set but unmapped —
-// callers must check the raw value separately if they need to distinguish those.
-function resolveLang(raw: string | null): string | null {
-  if (!raw) return null
-  const key = raw.trim().toLowerCase()
-  if (LANG_MAP[key]) return LANG_MAP[key]
-  console.warn(`[bioedge] unmapped language "${raw}" — leaving language blank for manual assignment, add it to LANG_MAP in bioedge.ts`)
-  return null
-}
-
 function parseWebhookValue(raw: unknown, field: string): unknown {
   if (raw === null || raw === undefined) return null
   let val: unknown = raw
@@ -85,7 +66,9 @@ async function mondayGql(query: string): Promise<any> {
 // bioedge_proof_products entry so it appears on the BioEdge proofreading page.
 // No-op if this subitem already has one, or if the language is English. Keyed by
 // subitem_id rather than product_name so distinct subitems sharing a product name
-// each still get their own row.
+// each still get their own row. Language is never auto-filled from Monday's language
+// column — it's left blank so the item lands in the "Needs language" bucket and gets
+// assigned manually in the product edit UI.
 async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void> {
   const { data: sub } = await supabase
     .from('bioedge_subitems')
@@ -94,10 +77,8 @@ async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void>
     .maybeSingle()
   if (!sub) return
 
-  const rawLang = sub.language as string | null
-  if (!rawLang) return
-  const lang = resolveLang(rawLang)
-  if (lang === 'EN') return
+  const rawLang = (sub.language as string | null)?.trim().toLowerCase() ?? null
+  if (rawLang === 'english') return
 
   const { data: item } = await supabase
     .from('bioedge_items')
@@ -117,7 +98,7 @@ async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void>
   await supabase.from('bioedge_proof_products').insert({
     subitem_id:   sub.id,
     product_name: productName,
-    language:     lang,
+    language:     null,
     pdp_url:      (sub.completed_funnel_url ?? null) as string | null,
     drive_folder: (sub.ads_drive_link ?? null) as string | null,
     monday_url:   (sub.monday_url ?? null) as string | null,
