@@ -303,6 +303,14 @@ router.post('/mark-paid', authenticate, requireManagement, async (req: AuthReque
   res.json({ ok: true })
 })
 
+// Full product-name history across all builds — used for cross-reference lookups, not display,
+// so it only pulls the one column it needs instead of every build's full row.
+router.get('/product-names', authenticate, async (_req: AuthRequest, res: Response) => {
+  const { data, error } = await supabase.from('builds').select('product_name')
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data ?? [])
+})
+
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   const { type, month } = req.query
   let query = supabase.from('builds').select('*').order('created_at', { ascending: true })

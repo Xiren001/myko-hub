@@ -105,7 +105,7 @@ function computeTranslation(jewelryBuilds: ReturnType<typeof enrichBuild>[]) {
 const TRACKER_LANGS = new Set(['ES', 'DE'])
 
 
-function computePaymentStatus(allProofProducts: ProofProduct[]) {
+function computePaymentStatus(allProofProducts: Pick<ProofProduct, 'paid'>[]) {
   return {
     paid: allProofProducts.filter(pp => pp.paid === true).length,
     unpaid: allProofProducts.filter(pp => pp.paid === false || pp.paid === null).length,
@@ -245,26 +245,32 @@ router.get('/weekly', authenticate, async (req: AuthRequest, res: Response) => {
   const monthStr = month && typeof month === 'string' ? month : new Date().toISOString().slice(0, 7)
   const ms = monthStart(monthStr)
   const me = monthEnd(monthStr)
+  // exclusive upper bound for created_at — month_year/week_number may be null on directly-added
+  // products, so filtering by created_at range (rather than those columns) is what actually scopes this
+  const [year, monthNum] = monthStr.split('-').map(Number)
+  const nextMonthStart = monthNum === 12
+    ? `${year + 1}-01-01`
+    : `${year}-${String(monthNum + 1).padStart(2, '0')}-01`
 
-  const [buildsResult, proofAllResult, settingsResult] = await Promise.all([
+  const [buildsResult, proofMonthResult, proofPaidResult, settingsResult] = await Promise.all([
     supabase.from('builds').select('*').gte('month_year', ms).lte('month_year', me),
-    supabase.from('proof_products').select('*'),
+    supabase.from('proof_products').select('*').gte('created_at', ms).lt('created_at', nextMonthStart),
+    supabase.from('proof_products').select('paid'),
     supabase.from('settings').select('*').eq('id', 1).single(),
   ])
 
   if (buildsResult.error) return res.status(500).json({ error: buildsResult.error.message })
+  if (proofMonthResult.error) return res.status(500).json({ error: proofMonthResult.error.message })
 
   const enriched = ((buildsResult.data ?? []) as RawBuild[]).map(enrichBuild)
   const jewelryBuilds = enriched.filter(b => b.type === 'jewelry')
 
-  const allProofProducts = (proofAllResult.data ?? []) as ProofProduct[]
-  // Filter by created_at — month_year/week_number may be null on directly-added products
-  const filteredProofProducts = allProofProducts.filter(pp => pp.created_at?.startsWith(monthStr))
+  const filteredProofProducts = (proofMonthResult.data ?? []) as ProofProduct[]
   const proofMap = buildProofMap(filteredProofProducts)
 
   const weeks = [1, 2, 3, 4].map(w => computeWeekData(w, jewelryBuilds, proofMap, filteredProofProducts))
 
-  const paymentStatus = computePaymentStatus(allProofProducts)
+  const paymentStatus = computePaymentStatus((proofPaidResult.data ?? []) as Pick<ProofProduct, 'paid'>[])
   const settings = extractSettings(settingsResult.data as Record<string, unknown> | null)
 
   res.json({

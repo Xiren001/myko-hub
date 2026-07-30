@@ -27,6 +27,17 @@ router.get('/products', async (req: AuthRequest, res: Response) => {
   res.json(products)
 })
 
+// Full product-name history across all proof products — used for cross-reference lookups, not
+// display, so it only pulls the one column it needs instead of every product's full row + correction counts.
+router.get('/product-names', async (req: AuthRequest, res: Response) => {
+  let q = supabase.from('proof_products').select('product_name')
+  if (req.userLangs?.length) q = q.in('language', req.userLangs)
+
+  const { data, error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data ?? [])
+})
+
 // GET /products/:id/corrections
 router.get('/products/:id/corrections', async (req: AuthRequest, res: Response) => {
   const { data, error } = await supabase
