@@ -47,12 +47,14 @@ const LANG_MAP: Record<string, string> = {
   'portugese (brazilian)':    'BR',
 }
 
+// Returns null both when no language is set and when it's set but unmapped —
+// callers must check the raw value separately if they need to distinguish those.
 function resolveLang(raw: string | null): string | null {
   if (!raw) return null
   const key = raw.trim().toLowerCase()
   if (LANG_MAP[key]) return LANG_MAP[key]
-  console.warn(`[bioedge] unmapped language "${raw}" — add it to LANG_MAP in bioedge.ts`)
-  return raw.trim().toUpperCase()
+  console.warn(`[bioedge] unmapped language "${raw}" — leaving language blank for manual assignment, add it to LANG_MAP in bioedge.ts`)
+  return null
 }
 
 function parseWebhookValue(raw: unknown, field: string): unknown {
@@ -92,8 +94,10 @@ async function upsertBioedgeProofProduct(mondaySubitemId: string): Promise<void>
     .maybeSingle()
   if (!sub) return
 
-  const lang = resolveLang(sub.language as string | null)
-  if (!lang || lang === 'EN') return
+  const rawLang = sub.language as string | null
+  if (!rawLang) return
+  const lang = resolveLang(rawLang)
+  if (lang === 'EN') return
 
   const { data: item } = await supabase
     .from('bioedge_items')
