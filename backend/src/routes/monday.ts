@@ -176,6 +176,63 @@ async function logAdsPerformanceEvents(mondayItemId: string, mondaySubitemId: st
   }
 }
 
+// One-time seed: scans Monday's *current* state (existing People assignments and existing
+// "Building - <name>" statuses) and logs everything into THIS week, so the sheet isn't empty
+// on day one. Does not attempt to reconstruct which week things actually happened in.
+async function runTeamPerformanceBackfill(): Promise<{ ads: number; webDev: number }> {
+  const now = new Date()
+  let ads = 0
+
+  const adsBoardIds = Object.entries(PARENT_BOARD_MAP)
+    .filter(([, wave]) => wave >= 1 && wave <= 6)
+    .map(([boardId]) => boardId)
+
+  for (const boardId of adsBoardIds) {
+    let cursor: string | null = null
+    do {
+      const cursorArg = cursor ? `, cursor: "${cursor}"` : ''
+      const resp = await mondayGql(`{
+        boards(ids: [${boardId}]) {
+          items_page(limit: 50${cursorArg}) {
+            cursor
+            items { id column_values { id text } subitems { id } }
+          }
+        }
+      }`)
+      const page = resp?.data?.boards?.[0]?.items_page
+      for (const item of page?.items ?? []) {
+        const peopleText = findPeopleText(item.column_values)
+        if (!peopleText) continue
+        const names = peopleText.split(',').map((n: string) => n.trim()).filter(Boolean)
+        for (const sub of item.subitems ?? []) {
+          for (const name of names) {
+            await logTeamPerformanceEvent('ads', name, String(sub.id), String(item.id), now)
+            ads++
+          }
+        }
+      }
+      cursor = page?.cursor ?? null
+    } while (cursor)
+  }
+
+  // Website Status is already mirrored locally — no need to re-hit Monday's API for this half.
+  const { data: building } = await supabase
+    .from('monday_subitems')
+    .select('monday_subitem_id, website_status')
+    .ilike('website_status', 'building - %')
+
+  let webDev = 0
+  for (const row of building ?? []) {
+    const builder = parseBuilderName(row.website_status as string)
+    if (builder) {
+      await logTeamPerformanceEvent('web_dev', builder, row.monday_subitem_id as string, null, now)
+      webDev++
+    }
+  }
+
+  return { ads, webDev }
+}
+
 // When a subitem enters "Proofread" status, auto-create a proof_products entry
 // so it appears in the Proofreading page. No-op if this subitem already has one —
 // keyed by subitem ID, not product_name, so distinct subitems sharing a product
@@ -868,6 +925,25 @@ router.get('/team-performance', authenticate, requireAdmin, async (req: AuthRequ
     .sort((a, b) => b.total - a.total)
 
   return res.json({ weeks, people })
+})
+
+// ── POST /api/monday/team-performance/backfill ────────────────────────────
+// One-time seed of the sheet from Monday's current state. Guarded by the
+// team_performance_backfill singleton row — a second call is a no-op.
+router.post('/team-performance/backfill', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  const { error: guardErr } = await supabase.from('team_performance_backfill').insert({})
+  if (guardErr) {
+    if (guardErr.code === '23505') return res.json({ ok: true, alreadyRan: true })
+    return res.status(500).json({ error: guardErr.message })
+  }
+
+  try {
+    const result = await runTeamPerformanceBackfill()
+    return res.json({ ok: true, alreadyRan: false, ...result })
+  } catch (err) {
+    console.error('team-performance backfill error:', err)
+    return res.status(500).json({ error: 'Backfill failed' })
+  }
 })
 
 // ── GET /api/monday/waves-weekly-report ──────────────────────────────────
