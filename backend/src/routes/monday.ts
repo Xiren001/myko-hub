@@ -6,6 +6,7 @@ import { computeWavesReport } from '../utils/computeWavesReport'
 import { generateWaveReportPdf } from '../utils/generateWaveReportPdf'
 import { runWaveReportSnapshot, getCronSchedule } from '../jobs/waveReportCron'
 import { runWaveReportMonthlySnapshot, getMonthlyCronSchedule } from '../jobs/waveReportMonthlyCron'
+import { weekStartISO, recentWeekStarts } from '../utils/week'
 
 const router = Router()
 
@@ -87,6 +88,27 @@ const SUB_COL: Record<string, string> = {
 
 const BOOL_FIELDS = new Set(['concluded', 'listed_for_proofread', 'meta', 'tiktok', 'youtube', 'pinterest', 'google_shopping', 'google_search'])
 
+// "People" column IDs on parent item boards, one per wave (Wave 7 / Stopped have none).
+// Column IDs are unique across boards, so a flat list is enough — no need to key by board.
+const PEOPLE_COL_IDS = [
+  'multiple_person_mm5efmkj', // Wave 1
+  'multiple_person_mm5nfge2', // Wave 2
+  'multiple_person_mm5n31jq', // Wave 3
+  'multiple_person_mm5pf2qx', // Wave 4
+  'multiple_person_mm5gf5sd', // Wave 5
+  'multiple_person_mm5h1tf3', // Wave 6
+]
+
+function findPeopleText(columnValues?: { id: string; text: string | null }[]): string | null {
+  return columnValues?.find(cv => PEOPLE_COL_IDS.includes(cv.id) && cv.text)?.text ?? null
+}
+
+// Extracts the builder's name from a Website Status label like "Building - Dan"
+function parseBuilderName(status: string): string | null {
+  const m = status.match(/^building\s*-\s*(.+)$/i)
+  return m ? m[1].trim() : null
+}
+
 // Maps a landing_page_status label to the phase timestamp column it should stamp.
 // Order matters: check "ready to launch" before bare "ready".
 function lpPhaseField(status: string): string | null {
@@ -121,6 +143,37 @@ async function mondayGql(query: string): Promise<any> {
     body: JSON.stringify({ query }),
   })
   return res.json()
+}
+
+// Logs one team-performance event. De-duped per (track, subitem, week, person) by the
+// table's unique constraint — a duplicate insert (webhook retry, same-week re-trigger) is a no-op.
+async function logTeamPerformanceEvent(
+  track: 'ads' | 'web_dev',
+  personName: string,
+  mondaySubitemId: string,
+  mondayItemId: string | null,
+  occurredAt: Date,
+): Promise<void> {
+  const { error } = await supabase.from('team_performance_events').insert({
+    track,
+    person_name: personName,
+    monday_subitem_id: mondaySubitemId,
+    monday_item_id: mondayItemId,
+    week_start: weekStartISO(occurredAt),
+    occurred_at: occurredAt.toISOString(),
+  })
+  if (error && error.code !== '23505') console.error('logTeamPerformanceEvent error:', error)
+}
+
+// A new subitem = a new ad variant "made" — credit whoever is currently assigned
+// via the parent item's People column (empty at creation time → nobody credited).
+async function logAdsPerformanceEvents(mondayItemId: string, mondaySubitemId: string, peopleText: string | null): Promise<void> {
+  if (!peopleText) return
+  const names = peopleText.split(',').map(n => n.trim()).filter(Boolean)
+  const now = new Date()
+  for (const name of names) {
+    await logTeamPerformanceEvent('ads', name, mondaySubitemId, mondayItemId, now)
+  }
 }
 
 // When a subitem enters "Proofread" status, auto-create a proof_products entry
@@ -199,6 +252,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
             .eq('monday_subitem_id', pulseId)
             .is(tsField, null)
         }
+        const builder = parseBuilderName(value)
+        if (builder) await logTeamPerformanceEvent('web_dev', builder, pulseId, null, new Date())
       }
 
       if (field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
@@ -234,6 +289,11 @@ router.post('/webhook', async (req: Request, res: Response) => {
         }
       }
 
+      if (isSub && field === 'website_status' && typeof value === 'string') {
+        const builder = parseBuilderName(value)
+        if (builder) await logTeamPerformanceEvent('web_dev', builder, pulseId, null, new Date())
+      }
+
       if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
       }
@@ -257,7 +317,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
       }
 
     } else if (event.type === 'create_subitem') {
-      const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name url column_values { id text } parent_item { id } } }`)
+      const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name url column_values { id text } parent_item { id column_values { id text } } } }`)
       const sub = data?.data?.items?.[0]
       if (sub?.parent_item?.id) {
         const { data: parentItem } = await supabase.from('monday_items')
@@ -272,6 +332,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
             item_id: parentItem.id, monday_subitem_id: sub.id, name: sub.name, ...subCols,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'monday_subitem_id' })
+
+          const peopleText = findPeopleText(sub.parent_item.column_values)
+          await logAdsPerformanceEvents(String(sub.parent_item.id), String(sub.id), peopleText)
         }
       }
 
@@ -281,8 +344,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const { data: parentItem } = await supabase.from('monday_items')
         .select('id').eq('monday_item_id', parentItemId).single()
       if (parentItem) {
-        const data = await mondayGql(`{ items(ids: [${pulseId}]) { id name url column_values { id text } } }`)
-        const sub = data?.data?.items?.[0]
+        const data = await mondayGql(`{ items(ids: [${pulseId}, ${parentItemId}]) { id name url column_values { id text } } }`)
+        const items = data?.data?.items ?? []
+        const sub = items.find((i: any) => String(i.id) === pulseId)
         if (sub) {
           const subCols: Record<string, unknown> = { monday_url: sub.url ?? null }
           for (const cv of sub.column_values ?? []) {
@@ -293,6 +357,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
             item_id: parentItem.id, monday_subitem_id: sub.id, name: sub.name, ...subCols,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'monday_subitem_id' })
+
+          const parentRaw = items.find((i: any) => String(i.id) === parentItemId)
+          const peopleText = findPeopleText(parentRaw?.column_values)
+          await logAdsPerformanceEvents(parentItemId, String(sub.id), peopleText)
         }
       }
 
@@ -768,6 +836,38 @@ router.post('/product-sales/upload', authenticate, express.text({ type: '*/*', l
   const { error } = await supabase.from('product_sales').insert(rows)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true, uploaded: rows.length })
+})
+
+// ── GET /api/monday/team-performance ──────────────────────────────────────
+// Rolling per-person weekly counts for the Team Performance sheet. Admin only.
+router.get('/team-performance', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const track = req.query.track === 'web_dev' ? 'web_dev' : 'ads'
+  const weeksCount = Math.max(1, Math.min(52, parseInt(String(req.query.weeks ?? '10'), 10) || 10))
+  const weeks = recentWeekStarts(weeksCount)
+
+  const { data, error } = await supabase
+    .from('team_performance_events')
+    .select('person_name, week_start')
+    .eq('track', track)
+    .gte('week_start', weeks[0])
+  if (error) return res.status(500).json({ error: error.message })
+
+  const byPerson = new Map<string, Record<string, number>>()
+  for (const row of data ?? []) {
+    const counts = byPerson.get(row.person_name) ?? {}
+    counts[row.week_start] = (counts[row.week_start] ?? 0) + 1
+    byPerson.set(row.person_name, counts)
+  }
+
+  const people = Array.from(byPerson.entries())
+    .map(([name, counts]) => ({
+      name,
+      counts,
+      total: Object.values(counts).reduce((sum, n) => sum + n, 0),
+    }))
+    .sort((a, b) => b.total - a.total)
+
+  return res.json({ weeks, people })
 })
 
 // ── GET /api/monday/waves-weekly-report ──────────────────────────────────
