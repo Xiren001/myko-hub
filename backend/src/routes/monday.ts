@@ -317,6 +317,14 @@ router.post('/webhook', async (req: Request, res: Response) => {
         await upsertProofProductFromSubitem(pulseId)
       }
 
+      // Stamp when an ad subitem is first concluded (preserves original date)
+      if (field === 'concluded' && value === true) {
+        await supabase.from('monday_subitems')
+          .update({ concluded_at: new Date().toISOString() })
+          .eq('monday_subitem_id', pulseId)
+          .is('concluded_at', null)
+      }
+
     } else if (event.type === 'update_column_value') {
       const colMap = isSub ? SUB_COL : ITEM_COL
       const field  = colMap[event.columnId]
@@ -353,6 +361,14 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
       if (isSub && field === 'website_status' && typeof value === 'string' && value.toLowerCase() === 'waiting for proofread') {
         await upsertProofProductFromSubitem(pulseId)
+      }
+
+      // Stamp when an ad subitem is first concluded (preserves original date)
+      if (isSub && field === 'concluded' && value === true) {
+        await supabase.from('monday_subitems')
+          .update({ concluded_at: new Date().toISOString() })
+          .eq('monday_subitem_id', pulseId)
+          .is('concluded_at', null)
       }
 
     } else if (event.type === 'update_name' || event.type === 'change_name') {
@@ -925,6 +941,59 @@ router.get('/team-performance', authenticate, requireAdmin, async (req: AuthRequ
     .sort((a, b) => b.total - a.total)
 
   return res.json({ weeks, people })
+})
+
+// ── GET /api/monday/team-performance/detail ───────────────────────────────
+// Subitems credited to one person in one week, plus how many days each took
+// to run its funnel (ads: created → concluded; web dev: building → launched).
+router.get('/team-performance/detail', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const track = req.query.track === 'web_dev' ? 'web_dev' : 'ads'
+  const person = String(req.query.person ?? '')
+  const week = String(req.query.week ?? '')
+  if (!person || !week) return res.status(400).json({ error: 'person and week are required' })
+
+  const { data: events, error } = await supabase
+    .from('team_performance_events')
+    .select('monday_subitem_id')
+    .eq('track', track)
+    .eq('person_name', person)
+    .eq('week_start', week)
+  if (error) return res.status(500).json({ error: error.message })
+
+  const subitemIds = Array.from(new Set((events ?? []).map(e => e.monday_subitem_id as string)))
+  if (!subitemIds.length) return res.json({ subitems: [], averageDays: null })
+
+  const cols = track === 'web_dev'
+    ? 'monday_subitem_id, product_name, name, lp_building_at, lp_launched_at'
+    : 'monday_subitem_id, product_name, name, created_at, concluded, concluded_at'
+
+  const { data: subs, error: subErr } = await supabase
+    .from('monday_subitems')
+    .select(cols)
+    .in('monday_subitem_id', subitemIds)
+  if (subErr) return res.status(500).json({ error: subErr.message })
+
+  const DAY_MS = 1000 * 60 * 60 * 24
+  const subitems = subitemIds.map(id => {
+    const sub = (subs ?? []).find((s: any) => s.monday_subitem_id === id) as any
+    const productName = sub?.product_name || sub?.name || id
+    let days: number | null = null
+    if (track === 'web_dev') {
+      if (sub?.lp_building_at && sub?.lp_launched_at) {
+        days = Math.round((new Date(sub.lp_launched_at).getTime() - new Date(sub.lp_building_at).getTime()) / DAY_MS)
+      }
+    } else if (sub?.concluded && sub?.concluded_at && sub?.created_at) {
+      days = Math.round((new Date(sub.concluded_at).getTime() - new Date(sub.created_at).getTime()) / DAY_MS)
+    }
+    return { monday_subitem_id: id, product_name: productName, days }
+  })
+
+  const finished = subitems.filter(s => s.days !== null).map(s => s.days as number)
+  const averageDays = finished.length
+    ? Math.round((finished.reduce((sum, d) => sum + d, 0) / finished.length) * 10) / 10
+    : null
+
+  return res.json({ subitems, averageDays })
 })
 
 // ── POST /api/monday/team-performance/backfill ────────────────────────────
