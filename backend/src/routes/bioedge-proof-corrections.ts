@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { supabase } from '../supabase'
-import { authenticate, requireAdmin, requireCorrectionWrite, requireBioedgeSystem, AuthRequest } from '../middleware/auth'
+import { authenticate, requireAdmin, requireManagement, requireCorrectionWrite, requireBioedgeSystem, AuthRequest } from '../middleware/auth'
 import { enqueueBioedgeNotification } from '../jobs/bioedgeNotificationScheduler'
 import { enqueueNotification } from '../jobs/notificationScheduler'
 import { isBioedgeSharingEnabled } from '../utils/bioedgeSharing'
@@ -40,6 +40,47 @@ router.get('/products/:id/corrections', async (req: AuthRequest, res: Response) 
 
   if (error) return res.status(500).json({ error: error.message })
   res.json(data ?? [])
+})
+
+type PaymentStatus = 'done' | 'ready' | 'needs_links' | 'needs_language' | 'active'
+
+function paymentStatus(p: { done: boolean; pdp_url: string | null; drive_folder: string | null; language: string | null; ready_for_revision: boolean }): PaymentStatus {
+  if (p.done) return 'done'
+  if (!p.pdp_url || !p.drive_folder) return 'needs_links'
+  if (!p.language) return 'needs_language'
+  if (p.ready_for_revision) return 'ready'
+  return 'active'
+}
+
+// GET /payment-overview — admin + management only
+router.get('/payment-overview', requireManagement, async (req: AuthRequest, res: Response) => {
+  let q = supabase.from('bioedge_proof_products').select('*').order('language').order('product_name')
+  if (req.userLangs?.length) q = q.in('language', req.userLangs)
+
+  const { data, error } = await q
+  if (error) return res.status(500).json({ error: error.message })
+
+  const items = (data ?? []).map(p => ({
+    ...p,
+    completed_at: p.done ? ([p.website_done_at, p.ads_done_at].filter(Boolean).sort().pop() ?? null) : null,
+    status:       paymentStatus(p),
+  }))
+  res.json(items)
+})
+
+// POST /mark-paid — admin + management only
+router.post('/mark-paid', requireManagement, async (req: AuthRequest, res: Response) => {
+  const { id, paid, paid_at } = req.body as { id: string; paid: boolean; paid_at: string | null }
+
+  const { data, error } = await supabase
+    .from('bioedge_proof_products')
+    .update({ paid, paid_at, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
 })
 
 // POST /products — admin only
