@@ -382,7 +382,7 @@ export function generateWaveReportPdf(
           const xOff = MARGIN + i * (HALF + 20)
           let ty = startY
 
-          const total = Object.values(q).reduce((s, n) => s + n, 0)
+          const total = Object.values(q).reduce((s, b: any) => s + b.count, 0)
           doc.font('Text-Bold').fontSize(9).fillColor(C.ink)
              .text(name, xOff, ty, { width: HALF })
           ty += 14
@@ -390,7 +390,7 @@ export function generateWaveReportPdf(
              .text(String(total), xOff, ty, { width: HALF })
           ty += 22
 
-          const entries = Object.entries(q).sort(([, a], [, b]) => b - a)
+          const entries = Object.entries(q).map(([status, b]: [string, any]) => [status, b.count] as [string, number]).sort(([, a], [, b]) => b - a)
           for (const [status, count] of entries) {
             // status labels are Monday status-column option text — freeform, render mixed-script safe
             richText(doc, status, xOff, ty, { size: 8, color: C.muted, width: HALF - 30 })

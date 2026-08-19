@@ -24,27 +24,93 @@ export interface WaveReportData {
   activeWinnerCount: number
   productSalesUpdatedAt: string | null
   teamQueue: {
-    wave1:   { ad: Record<string, number>; web: Record<string, number> }
-    waves27: { ad: Record<string, number>; web: Record<string, number> }
+    wave1:   { ad: Record<string, TeamQueueBucket>; web: Record<string, TeamQueueBucket> }
+    waves27: { ad: Record<string, TeamQueueBucket>; web: Record<string, TeamQueueBucket> }
   }
   newLanguagesLaunchedThisWeek: number
   newLanguagesLaunchedList: { product: string; language: string }[]
+}
+
+export interface TeamQueueEntry {
+  id: string
+  label: string
+  link: string | null
+  count: number
+}
+
+export interface TeamQueueBucket {
+  count: number
+  entries: TeamQueueEntry[]
 }
 
 const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'running', 'ready to launch'])
 const LAUNCHED_STATES = new Set(['launched', 'running'])
 const isLaunchedStatus = (s: string | null | undefined) => LAUNCHED_STATES.has((s ?? '').trim().toLowerCase())
 
-function computeTeamQueue(subs: any[]): { ad: Record<string, number>; web: Record<string, number> } {
-  const ad: Record<string, number> = {}
-  const web: Record<string, number> = {}
+function pushTeamQueueEntry(map: Record<string, TeamQueueBucket>, statusKey: string, s: any) {
+  const bucket = map[statusKey] ?? (map[statusKey] = { count: 0, entries: [] })
+  bucket.count++
+
+  const productName = (s.product_name ?? '').trim()
+  const market = (s.name ?? '').trim()
+  if (productName) {
+    bucket.entries.push({
+      id: s.id,
+      label: market ? `${productName} · ${market}` : productName,
+      link: s.page_link || null,
+      count: 1,
+    })
+    return
+  }
+
+  // No product name on the sub-item itself — group under the parent item instead
+  const item = s.monday_items
+  const groupId = `item-${item?.id ?? 'unknown'}`
+  const existing = bucket.entries.find(e => e.id === groupId)
+  if (existing) { existing.count++; return }
+  bucket.entries.push({ id: groupId, label: item?.name ?? 'Unknown item', link: null, count: 1 })
+}
+
+function computeTeamQueue(subs: any[]): { ad: Record<string, TeamQueueBucket>; web: Record<string, TeamQueueBucket> } {
+  const ad: Record<string, TeamQueueBucket> = {}
+  const web: Record<string, TeamQueueBucket> = {}
   for (const s of subs) {
     const adS  = (s.ad_status  ?? '').trim()
     const webS = (s.website_status ?? '').trim()
-    if (!TEAM_DONE.has(adS.toLowerCase()))  { const k = adS  || 'Not set'; ad[k]  = (ad[k]  ?? 0) + 1 }
-    if (!TEAM_DONE.has(webS.toLowerCase())) { const k = webS || 'Not set'; web[k] = (web[k] ?? 0) + 1 }
+    if (!TEAM_DONE.has(adS.toLowerCase()))  pushTeamQueueEntry(ad,  adS  || 'Not set', s)
+    if (!TEAM_DONE.has(webS.toLowerCase())) pushTeamQueueEntry(web, webS || 'Not set', s)
+  }
+  for (const bucket of [...Object.values(ad), ...Object.values(web)]) {
+    bucket.entries.sort((a, b) => a.label.localeCompare(b.label))
   }
   return { ad, web }
+}
+
+// Snapshots saved before per-item entries existed only have `{ [status]: number }` —
+// coerce those into the current bucket shape so old weeks still render.
+function normalizeQueueMap(map: Record<string, any> | undefined): Record<string, TeamQueueBucket> {
+  const out: Record<string, TeamQueueBucket> = {}
+  for (const [status, val] of Object.entries(map ?? {})) {
+    out[status] = typeof val === 'number' ? { count: val, entries: [] } : val
+  }
+  return out
+}
+
+export function normalizeTeamQueue<T extends { teamQueue?: any }>(data: T): T {
+  if (!data?.teamQueue) return data
+  return {
+    ...data,
+    teamQueue: {
+      wave1: {
+        ad:  normalizeQueueMap(data.teamQueue.wave1?.ad),
+        web: normalizeQueueMap(data.teamQueue.wave1?.web),
+      },
+      waves27: {
+        ad:  normalizeQueueMap(data.teamQueue.waves27?.ad),
+        web: normalizeQueueMap(data.teamQueue.waves27?.web),
+      },
+    },
+  }
 }
 
 const isEnSub = (name: string) => /\b(en|english)\b/i.test(name ?? '')
@@ -101,7 +167,7 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
       : Promise.resolve({ count: 0 }),
     wave1Id
       ? supabase.from('monday_subitems')
-          .select('name, product_name, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(wave_id)')
+          .select('id, name, product_name, page_link, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(id, name, wave_id)')
           .eq('monday_items.wave_id', wave1Id)
       : Promise.resolve({ data: [] }),
   ])
@@ -171,7 +237,7 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
       : Promise.resolve({ data: [] }),
     waveIds27.length > 0
       ? supabase.from('monday_subitems')
-          .select('ad_status, website_status, product_name, monday_items!inner(wave_id)')
+          .select('id, name, ad_status, website_status, product_name, page_link, monday_items!inner(id, name, wave_id)')
           .in('monday_items.wave_id', waveIds27)
       : Promise.resolve({ data: [] }),
     waveIds27.length > 0

@@ -2,7 +2,7 @@ import express, { Router, Request, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
 import { enqueueNotification } from '../jobs/notificationScheduler'
-import { computeWavesReport } from '../utils/computeWavesReport'
+import { computeWavesReport, normalizeTeamQueue } from '../utils/computeWavesReport'
 import { generateWaveReportPdf } from '../utils/generateWaveReportPdf'
 import { runWaveReportSnapshot, getCronSchedule } from '../jobs/waveReportCron'
 import { runWaveReportMonthlySnapshot, getMonthlyCronSchedule } from '../jobs/waveReportMonthlyCron'
@@ -1028,7 +1028,7 @@ router.get('/waves-weekly-report', authenticate, async (req: AuthRequest, res: R
       .maybeSingle()
 
     if (snap) {
-      return res.json({ ...(snap.data as object), isSnapshot: true })
+      return res.json({ ...normalizeTeamQueue(snap.data as any), isSnapshot: true })
     }
   }
 
@@ -1085,7 +1085,7 @@ router.get('/wave-report-snapshot/:weekStart/pdf', authenticate, async (req: Aut
     .maybeSingle()
 
   if (snap) {
-    reportData  = snap.data
+    reportData  = normalizeTeamQueue(snap.data as any)
     isSnapshot  = true
   } else {
     // Fall back to live data
@@ -1146,7 +1146,7 @@ router.get('/waves-monthly-report', authenticate, async (req: AuthRequest, res: 
       .maybeSingle()
 
     if (snap) {
-      return res.json({ ...(snap.data as object), isSnapshot: true })
+      return res.json({ ...normalizeTeamQueue(snap.data as any), isSnapshot: true })
     }
   }
 
@@ -1203,7 +1203,7 @@ router.get('/wave-report-monthly-snapshot/:monthStart/pdf', authenticate, async 
     .maybeSingle()
 
   if (snap) {
-    reportData  = snap.data
+    reportData  = normalizeTeamQueue(snap.data as any)
     isSnapshot  = true
   } else {
     // Fall back to live data
