@@ -769,18 +769,16 @@ router.post('/import', authenticate, requireAdmin, async (_req: AuthRequest, res
 })
 
 // ── POST /api/monday/register-hooks ──────────────────────────────────────
-// Registers change_column_value webhooks on all boards. Admin only.
+// Registers change_column_value webhooks on all parent boards. Admin only.
+// Subitem boards are excluded — Monday.com rejects webhooks registered directly
+// on them; subitem column changes are instead delivered as change_subitem_column_value
+// events on the parent board's webhook (handled in POST /webhook below).
 router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
-  const allBoards = [
-    ...Object.keys(PARENT_BOARD_MAP),
-    ...Object.keys(SUBITEM_BOARD_MAP),
-  ]
-
   const results: Record<string, unknown> = {}
 
-  for (const boardId of allBoards) {
+  for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
     const resp = await mondayGql(`
       mutation {
         create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: change_column_value) {
