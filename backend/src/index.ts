@@ -24,6 +24,7 @@ import { startNotificationScheduler } from './jobs/notificationScheduler'
 import { startBioedgeNotificationScheduler } from './jobs/bioedgeNotificationScheduler'
 import { startWaveReportCron } from './jobs/waveReportCron'
 import { startWaveReportMonthlyCron } from './jobs/waveReportMonthlyCron'
+import { startRegisterHooksCron } from './jobs/registerHooksCron'
 
 const app = express()
 
@@ -68,4 +69,5 @@ app.listen(PORT, () => {
   startBioedgeNotificationScheduler()
   startWaveReportCron()
   startWaveReportMonthlyCron()
+  startRegisterHooksCron()
 })

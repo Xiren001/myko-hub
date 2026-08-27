@@ -768,13 +768,12 @@ router.post('/import', authenticate, requireAdmin, async (_req: AuthRequest, res
   return res.json({ ok: true, results })
 })
 
-// ── POST /api/monday/register-hooks ──────────────────────────────────────
-// Registers change_column_value webhooks on all parent boards. Admin only.
+// Registers change_column_value webhooks on all parent boards.
 // Subitem boards are excluded — Monday.com rejects webhooks registered directly
 // on them; subitem column changes are instead delivered as change_subitem_column_value
 // events on the parent board's webhook (handled in POST /webhook below).
-router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
-  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+export async function registerMondayHooks(): Promise<Record<string, unknown>> {
+  if (!MONDAY_TOKEN) throw new Error('MONDAY_API_TOKEN not set')
 
   const results: Record<string, unknown> = {}
 
@@ -789,6 +788,15 @@ router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequ
     results[boardId] = resp?.data?.create_webhook ?? resp?.errors
   }
 
+  return results
+}
+
+// ── POST /api/monday/register-hooks ──────────────────────────────────────
+// Registers change_column_value webhooks on all parent boards. Admin only.
+router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
+
+  const results = await registerMondayHooks()
   return res.json({ ok: true, results })
 })
 
