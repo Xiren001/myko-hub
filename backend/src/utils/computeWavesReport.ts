@@ -36,6 +36,7 @@ export interface TeamQueueEntry {
   label: string
   link: string | null
   count: number
+  addedAt: string | null
 }
 
 export interface TeamQueueBucket {
@@ -47,7 +48,7 @@ const TEAM_DONE = new Set(['launched', 'stopped', 'banned', 'do not start', 'run
 const LAUNCHED_STATES = new Set(['launched', 'running'])
 const isLaunchedStatus = (s: string | null | undefined) => LAUNCHED_STATES.has((s ?? '').trim().toLowerCase())
 
-function pushTeamQueueEntry(map: Record<string, TeamQueueBucket>, statusKey: string, s: any) {
+function pushTeamQueueEntry(map: Record<string, TeamQueueBucket>, statusKey: string, s: any, addedAt: string | null) {
   const bucket = map[statusKey] ?? (map[statusKey] = { count: 0, entries: [] })
   bucket.count++
 
@@ -59,6 +60,7 @@ function pushTeamQueueEntry(map: Record<string, TeamQueueBucket>, statusKey: str
       label: market ? `${productName} · ${market}` : productName,
       link: s.page_link || null,
       count: 1,
+      addedAt,
     })
     return
   }
@@ -68,7 +70,7 @@ function pushTeamQueueEntry(map: Record<string, TeamQueueBucket>, statusKey: str
   const groupId = `item-${item?.id ?? 'unknown'}`
   const existing = bucket.entries.find(e => e.id === groupId)
   if (existing) { existing.count++; return }
-  bucket.entries.push({ id: groupId, label: item?.name ?? 'Unknown item', link: null, count: 1 })
+  bucket.entries.push({ id: groupId, label: item?.name ?? 'Unknown item', link: null, count: 1, addedAt })
 }
 
 function computeTeamQueue(subs: any[]): { ad: Record<string, TeamQueueBucket>; web: Record<string, TeamQueueBucket> } {
@@ -77,8 +79,8 @@ function computeTeamQueue(subs: any[]): { ad: Record<string, TeamQueueBucket>; w
   for (const s of subs) {
     const adS  = (s.ad_status  ?? '').trim()
     const webS = (s.website_status ?? '').trim()
-    if (!TEAM_DONE.has(adS.toLowerCase()))  pushTeamQueueEntry(ad,  adS  || 'Not set', s)
-    if (!TEAM_DONE.has(webS.toLowerCase())) pushTeamQueueEntry(web, webS || 'Not set', s)
+    if (!TEAM_DONE.has(adS.toLowerCase()))  pushTeamQueueEntry(ad,  adS  || 'Not set', s, s.ad_status_changed_at ?? null)
+    if (!TEAM_DONE.has(webS.toLowerCase())) pushTeamQueueEntry(web, webS || 'Not set', s, s.website_status_changed_at ?? null)
   }
   for (const bucket of [...Object.values(ad), ...Object.values(web)]) {
     bucket.entries.sort((a, b) => a.label.localeCompare(b.label))
@@ -87,11 +89,13 @@ function computeTeamQueue(subs: any[]): { ad: Record<string, TeamQueueBucket>; w
 }
 
 // Snapshots saved before per-item entries existed only have `{ [status]: number }` —
-// coerce those into the current bucket shape so old weeks still render.
+// coerce those into the current bucket shape so old weeks still render. Snapshots saved
+// before `addedAt` existed are missing it on each entry — default to null.
 function normalizeQueueMap(map: Record<string, any> | undefined): Record<string, TeamQueueBucket> {
   const out: Record<string, TeamQueueBucket> = {}
   for (const [status, val] of Object.entries(map ?? {})) {
-    out[status] = typeof val === 'number' ? { count: val, entries: [] } : val
+    const bucket: TeamQueueBucket = typeof val === 'number' ? { count: val, entries: [] } : val
+    out[status] = { ...bucket, entries: bucket.entries.map(e => ({ ...e, addedAt: e.addedAt ?? null })) }
   }
   return out
 }
@@ -167,7 +171,7 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
       : Promise.resolve({ count: 0 }),
     wave1Id
       ? supabase.from('monday_subitems')
-          .select('id, name, product_name, page_link, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, monday_items!inner(id, name, wave_id)')
+          .select('id, name, product_name, page_link, lp_building_at, lp_ready_at, lp_proofread_at, lp_ready_to_launch_at, website_status, ad_status, ad_status_changed_at, website_status_changed_at, monday_items!inner(id, name, wave_id)')
           .eq('monday_items.wave_id', wave1Id)
       : Promise.resolve({ data: [] }),
   ])
@@ -237,7 +241,7 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
       : Promise.resolve({ data: [] }),
     waveIds27.length > 0
       ? supabase.from('monday_subitems')
-          .select('id, name, ad_status, website_status, product_name, page_link, monday_items!inner(id, name, wave_id)')
+          .select('id, name, ad_status, website_status, ad_status_changed_at, website_status_changed_at, product_name, page_link, monday_items!inner(id, name, wave_id)')
           .in('monday_items.wave_id', waveIds27)
       : Promise.resolve({ data: [] }),
     waveIds27.length > 0

@@ -295,6 +295,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
       if (!field) return res.json({ ok: true })
       const value = parseWebhookValue(event.value, field)
       const subPayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
+      if (field === 'ad_status' || field === 'website_status') {
+        subPayload[`${field}_changed_at`] = new Date().toISOString()
+      }
 
       await supabase.from('monday_subitems')
         .update(subPayload)
@@ -335,6 +338,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const idCol = isSub ? 'monday_subitem_id' : 'monday_item_id'
 
       const updatePayload: Record<string, unknown> = { [field]: value, updated_at: new Date().toISOString() }
+      if (isSub && (field === 'ad_status' || field === 'website_status')) {
+        updatePayload[`${field}_changed_at`] = new Date().toISOString()
+      }
 
       await supabase.from(table)
         .update(updatePayload)
