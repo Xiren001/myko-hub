@@ -129,10 +129,10 @@ const hasLangTerm = (name: string, terms: string[]): boolean => {
 
 const NEW_WAVE_LANGS: Record<number, string[]> = {
   2: ['france', 'fr', 'french', 'netherlands', 'nl', 'dutch', 'italy', 'it', 'italian'],
-  3: ['finland', 'fi', 'finnish', 'sweden', 'se', 'swedish', 'norway', 'no', 'norwegian'],
+  3: ['spain', 'es', 'spanish', 'argentina', 'ar', 'paraguay', 'py', 'argentina-paraguay', 'ar-py', 'chile', 'cl'],
   4: ['israel', 'il', 'hebrew', 'brazil', 'br', 'portuguese', 'pt', 'pt-br', 'japan', 'jp', 'japanese', 'ja'],
   5: ['denmark', 'dk', 'danish', 'da', 'czech republic', 'czech', 'cz', 'cs', 'poland', 'pl', 'polish'],
-  6: ['turkey', 'türkiye', 'tr', 'turkish', 'lithuania', 'lt', 'lithuanian', 'estonia', 'ee', 'estonian', 'et'],
+  6: ['israel', 'il', 'hebrew', 'czech republic', 'czech', 'cz', 'cs', 'south korea', 'korea', 'kr'],
   7: ['slovakia', 'sk', 'slovak', 'slovenia', 'si', 'slovenian', 'sl', 'romania', 'ro', 'romanian'],
 }
 
