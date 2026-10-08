@@ -62,43 +62,8 @@ export async function runWaveReportMonthlySnapshot(): Promise<void> {
       console.log(`[wave-report-monthly-cron] snapshot saved for month ${monthStart}`)
     }
 
-    await resetMonthlyLaunchCounterBaseline()
   } catch (err) {
     console.error('[wave-report-monthly-cron] error:', err)
-  }
-}
-
-// Captures current ad/website status as the new monthly baseline so "New languages launched
-// this month" starts counting from 0 again until the next status change.
-async function resetMonthlyLaunchCounterBaseline(): Promise<void> {
-  const { data: subs, error: fetchError } = await supabase
-    .from('monday_subitems')
-    .select('id, item_id, name, ad_status, website_status')
-
-  if (fetchError) {
-    console.error('[wave-report-monthly-cron] baseline fetch error:', fetchError.message)
-    return
-  }
-  if (!subs || subs.length === 0) return
-
-  // item_id/name are NOT NULL columns with no default — Postgres builds a full row to check
-  // for conflicts, so an upsert missing them fails outright even though every row already exists.
-  const updates = subs.map((s: any) => ({
-    id: s.id,
-    item_id: s.item_id,
-    name: s.name,
-    last_monthly_snapshot_ad_status: s.ad_status,
-    last_monthly_snapshot_website_status: s.website_status,
-  }))
-
-  const { error: resetError } = await supabase
-    .from('monday_subitems')
-    .upsert(updates, { onConflict: 'id' })
-
-  if (resetError) {
-    console.error('[wave-report-monthly-cron] baseline reset error:', resetError.message)
-  } else {
-    console.log(`[wave-report-monthly-cron] baseline reset for ${updates.length} subitems`)
   }
 }
 

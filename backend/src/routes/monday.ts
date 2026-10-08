@@ -2,7 +2,7 @@ import express, { Router, Request, Response } from 'express'
 import { supabase } from '../supabase'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth'
 import { enqueueNotification } from '../jobs/notificationScheduler'
-import { computeWavesReport, normalizeTeamQueue } from '../utils/computeWavesReport'
+import { computeWavesReport, computeMonthlyNewLanguages, normalizeTeamQueue } from '../utils/computeWavesReport'
 import { generateWaveReportPdf } from '../utils/generateWaveReportPdf'
 import { runWaveReportSnapshot, getCronSchedule } from '../jobs/waveReportCron'
 import { runWaveReportMonthlySnapshot, getMonthlyCronSchedule } from '../jobs/waveReportMonthlyCron'
@@ -1145,6 +1145,13 @@ router.put('/wave-report-cron', authenticate, requireAdmin, async (req: AuthRequ
   return res.json({ ok: true, day, hour, minute, timezone })
 })
 
+// Monthly "new languages launched" is always the sum of that month's weeks, so it's recomputed
+// on read instead of trusting the value stored in a monthly snapshot.
+async function monthlyNewLanguagesFields(monthStart: string) {
+  const { count, list } = await computeMonthlyNewLanguages(monthStart)
+  return { newLanguagesLaunchedThisWeek: count, newLanguagesLaunchedList: list }
+}
+
 // ── GET /api/monday/waves-monthly-report ──────────────────────────────────
 router.get('/waves-monthly-report', authenticate, async (req: AuthRequest, res: Response) => {
   const { monthStart: monthStartParam } = req.query
@@ -1158,13 +1165,14 @@ router.get('/waves-monthly-report', authenticate, async (req: AuthRequest, res: 
       .maybeSingle()
 
     if (snap) {
-      return res.json({ ...normalizeTeamQueue(snap.data as any), isSnapshot: true })
+      return res.json({ ...normalizeTeamQueue(snap.data as any), ...(await monthlyNewLanguagesFields(monthStartParam)), isSnapshot: true })
     }
   }
 
   // Fall back to live computation
   const data = await computeWavesReport('month')
-  return res.json({ ...data, isSnapshot: false })
+  const monthOverride = typeof monthStartParam === 'string' ? await monthlyNewLanguagesFields(monthStartParam) : {}
+  return res.json({ ...data, ...monthOverride, isSnapshot: false })
 })
 
 // ── GET /api/monday/wave-report-monthly-snapshots ─────────────────────────
@@ -1221,6 +1229,7 @@ router.get('/wave-report-monthly-snapshot/:monthStart/pdf', authenticate, async 
     // Fall back to live data
     reportData = await computeWavesReport('month')
   }
+  reportData = { ...reportData, ...(await monthlyNewLanguagesFields(monthStart)) }
 
   try {
     const pdfBuffer = await generateWaveReportPdf(reportData, isSnapshot, 'month')

@@ -343,27 +343,11 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
     return proofProductNames.has(s.product_name?.trim().toLowerCase())
   }).length
 
-  // "New languages launched this week/month" — across all products, all waves. Counts subitems whose
-  // ad AND website status are both now launched/running but weren't both at the last cron snapshot.
-  // Week and month views track independent baselines so a monthly cron doesn't get reset by the
-  // weekly one (and vice versa).
-  const [baselineAdCol, baselineWebCol] = period === 'month'
-    ? ['last_monthly_snapshot_ad_status', 'last_monthly_snapshot_website_status']
-    : ['last_snapshot_ad_status', 'last_snapshot_website_status']
-  const { data: allSubsForLaunchCounter } = await supabase
-    .from('monday_subitems')
-    .select(`name, product_name, ad_status, website_status, ${baselineAdCol}, ${baselineWebCol}`)
-  const newlyLaunchedSubs = (allSubsForLaunchCounter ?? []).filter((s: any) => {
-    const nowLaunched = isLaunchedStatus(s.ad_status) && isLaunchedStatus(s.website_status)
-    if (!nowLaunched) return false
-    const wasLaunched = isLaunchedStatus(s[baselineAdCol]) && isLaunchedStatus(s[baselineWebCol])
-    return !wasLaunched
-  })
-  const newLanguagesLaunchedThisWeek = newlyLaunchedSubs.length
-  const newLanguagesLaunchedList = newlyLaunchedSubs.map((s: any) => ({
-    product: s.product_name?.trim() || 'Unknown',
-    language: s.name?.trim() || 'Unknown',
-  }))
+  // "New languages launched" — weekly comes from the live baseline counter; monthly is the sum
+  // of every week that belongs to the month (see computeMonthlyNewLanguages).
+  const { count: newLanguagesLaunchedThisWeek, list: newLanguagesLaunchedList } = period === 'month'
+    ? await computeMonthlyNewLanguages(toDateStr(ws))
+    : await computeWeeklyNewLanguages()
 
   return {
     weekStart: ws.toISOString(),
@@ -392,4 +376,75 @@ export async function computeWavesReport(period: 'week' | 'month' = 'week'): Pro
     newLanguagesLaunchedThisWeek,
     newLanguagesLaunchedList,
   }
+}
+
+type LaunchedLanguage = { product: string; language: string }
+
+const toDateStr = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Counts subitems (across all products, all waves) whose ad AND website status are both now
+// launched/running but weren't both at the last weekly cron snapshot.
+async function computeWeeklyNewLanguages(): Promise<{ count: number; list: LaunchedLanguage[] }> {
+  const { data } = await supabase
+    .from('monday_subitems')
+    .select('name, product_name, ad_status, website_status, last_snapshot_ad_status, last_snapshot_website_status')
+  const newlyLaunched = (data ?? []).filter((s: any) => {
+    const nowLaunched = isLaunchedStatus(s.ad_status) && isLaunchedStatus(s.website_status)
+    if (!nowLaunched) return false
+    const wasLaunched = isLaunchedStatus(s.last_snapshot_ad_status) && isLaunchedStatus(s.last_snapshot_website_status)
+    return !wasLaunched
+  })
+  const list = newlyLaunched.map((s: any) => ({
+    product: s.product_name?.trim() || 'Unknown',
+    language: s.name?.trim() || 'Unknown',
+  }))
+  return { count: list.length, list }
+}
+
+// A week belongs to the month its Thursday falls in (ISO convention), so weeks that straddle
+// two months are counted exactly once.
+function weekBelongsToMonth(weekStart: string, monthStart: string): boolean {
+  const thu = new Date(weekStart + 'T00:00:00')
+  thu.setDate(thu.getDate() + 3)
+  return toDateStr(thu).slice(0, 7) === monthStart.slice(0, 7)
+}
+
+// Monthly "new languages launched" = all weekly snapshots in the month added together, plus the
+// live counter for the current week if it hasn't been snapshotted yet.
+export async function computeMonthlyNewLanguages(monthStart: string): Promise<{ count: number; list: LaunchedLanguage[] }> {
+  const first = new Date(monthStart.slice(0, 7) + '-01T00:00:00')
+  const rangeStart = new Date(first); rangeStart.setDate(rangeStart.getDate() - 6)
+  const rangeEnd   = new Date(first.getFullYear(), first.getMonth() + 1, 0)
+
+  const { data: snaps } = await supabase
+    .from('wave_report_snapshots')
+    .select('week_start, data')
+    .gte('week_start', toDateStr(rangeStart))
+    .lte('week_start', toDateStr(rangeEnd))
+    .order('week_start', { ascending: true })
+
+  let count = 0
+  const list: LaunchedLanguage[] = []
+  const snapshotWeeks = new Set<string>()
+  for (const snap of (snaps ?? []) as any[]) {
+    const weekStart = String(snap.week_start).slice(0, 10)
+    snapshotWeeks.add(weekStart)
+    if (!weekBelongsToMonth(weekStart, monthStart)) continue
+    const weekList: LaunchedLanguage[] = snap.data?.newLanguagesLaunchedList ?? []
+    count += snap.data?.newLanguagesLaunchedThisWeek ?? weekList.length
+    list.push(...weekList)
+  }
+
+  const now = new Date()
+  const currentMonday = new Date(now)
+  currentMonday.setDate(now.getDate() + (now.getDay() === 0 ? -6 : 1 - now.getDay()))
+  const currentWeekStart = toDateStr(currentMonday)
+  if (!snapshotWeeks.has(currentWeekStart) && weekBelongsToMonth(currentWeekStart, monthStart)) {
+    const live = await computeWeeklyNewLanguages()
+    count += live.count
+    list.push(...live.list)
+  }
+
+  return { count, list }
 }
