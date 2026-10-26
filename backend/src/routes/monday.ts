@@ -36,8 +36,9 @@ function parseCSVLine(line: string): string[] {
   return result
 }
 
-// Parent board ID → wave number (0 = Stopped)
+// Parent board ID → wave number (0 = Stopped, -1 = Wave 0 since 0 was already taken)
 const PARENT_BOARD_MAP: Record<string, number> = {
+  '5031935467': -1,
   '5025397250': 1,
   '5029159813': 2,
   '5029160081': 3,
@@ -50,6 +51,7 @@ const PARENT_BOARD_MAP: Record<string, number> = {
 
 // Subitem board ID → parent board ID
 const SUBITEM_BOARD_MAP: Record<string, string> = {
+  '5031935468': '5031935467',  // Wave 0
   '5025397251': '5025397250',  // Wave 1
   '5029159814': '5029159813',
   '5029160083': '5029160081',
@@ -91,7 +93,7 @@ const BOOL_FIELDS = new Set(['concluded', 'listed_for_proofread', 'meta', 'tikto
 // "People" column IDs on parent item boards, one per wave (Wave 7 / Stopped have none).
 // Column IDs are unique across boards, so a flat list is enough — no need to key by board.
 const PEOPLE_COL_IDS = [
-  'multiple_person_mm5efmkj', // Wave 1
+  'multiple_person_mm5efmkj', // Wave 0 + Wave 1 (Wave 0 board was cloned from Wave 1)
   'multiple_person_mm5nfge2', // Wave 2
   'multiple_person_mm5n31jq', // Wave 3
   'multiple_person_mm5pf2qx', // Wave 4
@@ -184,7 +186,7 @@ async function runTeamPerformanceBackfill(): Promise<{ ads: number; webDev: numb
   let ads = 0
 
   const adsBoardIds = Object.entries(PARENT_BOARD_MAP)
-    .filter(([, wave]) => wave >= 1 && wave <= 6)
+    .filter(([, wave]) => wave === -1 || (wave >= 1 && wave <= 6))
     .map(([boardId]) => boardId)
 
   for (const boardId of adsBoardIds) {
@@ -692,6 +694,7 @@ router.post('/import', authenticate, requireAdmin, async (_req: AuthRequest, res
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
   const boards = [
+    { waveNumber: -1, boardId: '5031935467', name: 'Wave 0' },
     { waveNumber: 1, boardId: '5025397250', name: 'Wave 1' },
     { waveNumber: 2, boardId: '5029159813', name: 'Wave 2' },
     { waveNumber: 3, boardId: '5029160081', name: 'Wave 3' },
