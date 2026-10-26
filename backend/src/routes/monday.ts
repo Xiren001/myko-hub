@@ -777,31 +777,49 @@ router.post('/import', authenticate, requireAdmin, async (_req: AuthRequest, res
   return res.json({ ok: true, results })
 })
 
-// Registers change_column_value webhooks on all parent boards.
+// Every event the webhook handler below relies on. Subitem events (change_subitem_column_value,
+// create_subitem, ...) are what move a subitem into Proofreading, so a board missing them never
+// feeds that page.
+const HOOK_EVENTS = [
+  'change_column_value', 'change_subitem_column_value', 'change_name', 'change_subitem_name',
+  'create_item', 'create_subitem', 'item_deleted', 'subitem_deleted', 'item_restored',
+  'item_moved_to_any_group',
+] as const
+
+// Ensures every parent board has one webhook per HOOK_EVENTS entry, creating only the missing
+// ones — re-running (e.g. the twice-daily cron) no longer piles up duplicates.
 // Subitem boards are excluded — Monday.com rejects webhooks registered directly
-// on them; subitem column changes are instead delivered as change_subitem_column_value
-// events on the parent board's webhook (handled in POST /webhook below).
+// on them; subitem changes are instead delivered as change_subitem_* events
+// on the parent board's webhook (handled in POST /webhook below).
 export async function registerMondayHooks(): Promise<Record<string, unknown>> {
   if (!MONDAY_TOKEN) throw new Error('MONDAY_API_TOKEN not set')
 
   const results: Record<string, unknown> = {}
 
   for (const boardId of Object.keys(PARENT_BOARD_MAP)) {
-    const resp = await mondayGql(`
-      mutation {
-        create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: change_column_value) {
-          id board_id
+    const existingResp = await mondayGql(`{ webhooks(board_id: ${boardId}) { event } }`)
+    if (existingResp?.errors) { results[boardId] = existingResp.errors; continue }
+    const existing = new Set((existingResp?.data?.webhooks ?? []).map((w: any) => w.event))
+
+    const created: string[] = []
+    const errors: unknown[] = []
+    for (const event of HOOK_EVENTS.filter(e => !existing.has(e))) {
+      const resp = await mondayGql(`
+        mutation {
+          create_webhook(board_id: ${boardId}, url: "${WEBHOOK_URL}", event: ${event}) { id }
         }
-      }
-    `)
-    results[boardId] = resp?.data?.create_webhook ?? resp?.errors
+      `)
+      if (resp?.data?.create_webhook?.id) created.push(event)
+      else errors.push({ event, errors: resp?.errors ?? resp })
+    }
+    results[boardId] = errors.length ? errors : { id: boardId, created }
   }
 
   return results
 }
 
 // ── POST /api/monday/register-hooks ──────────────────────────────────────
-// Registers change_column_value webhooks on all parent boards. Admin only.
+// Ensures all webhook events exist on all parent boards. Admin only.
 router.post('/register-hooks', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
   if (!MONDAY_TOKEN) return res.status(500).json({ error: 'MONDAY_API_TOKEN not set' })
 
